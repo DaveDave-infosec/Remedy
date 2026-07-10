@@ -1,0 +1,23 @@
+# dependencies
+node_modules/
+frontend/node_modules/
+
+# builds
+dist/
+frontend/dist/
+
+# env & secrets
+.env
+.env.local
+*.key
+*secret*
+
+# os / editor
+.DS_Store
+*.log
+.vscode/
+.idea/
+
+# vite
+.vite/
+frontend/.vite/
