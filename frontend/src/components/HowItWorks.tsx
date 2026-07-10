@@ -79,6 +79,13 @@ export function HowItWorks() {
           software exploits that would need live execution are out of scope.
         </li>
         <li>
+          <strong>Language coverage.</strong> The verifier reasons over readable source
+          in any language, but verdict quality is strongest for well-documented
+          contract languages — Solidity most of all, where the common vulnerability
+          classes are best understood. Claims on less common languages are judged with
+          correspondingly less confidence.
+        </li>
+        <li>
           <strong>Settlement relay.</strong> In V1, a verdict is relayed to payout via
           an owner or project call. Each settlement is tied to the case id of the
           verdict it applies. Fully automatic, trustless settlement is the V2 target.
