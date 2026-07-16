@@ -3,12 +3,14 @@ import { openCampaign } from "../lib/contracts";
 
 export function OpenCampaign({
   account,
+  balance,
   disabled,
   onOpened,
 }: {
   account: string;
+  balance: number | null;
   disabled: boolean;
-  onOpened: () => void;
+  onOpened: () => void | Promise<void>;
 }) {
   const [targetUrl, setTargetUrl] = useState("");
   const [pool, setPool] = useState("20000");
@@ -21,6 +23,9 @@ export function OpenCampaign({
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
+  const poolNum = Number(pool);
+  const insufficient = balance !== null && poolNum > balance;
+
   async function submit() {
     setErr(null);
     setMsg(null);
@@ -28,26 +33,41 @@ export function OpenCampaign({
       setErr("Target URL is required.");
       return;
     }
+    if (poolNum <= 0) {
+      setErr("Bounty pool must be a positive amount.");
+      return;
+    }
+    if (insufficient) {
+      setErr(
+        "Insufficient balance: your pool of " +
+          poolNum +
+          " genUSDC exceeds your balance of " +
+          balance +
+          ". Claim the faucet or lower the pool."
+      );
+      return;
+    }
     setBusy(true);
-    setMsg("Opening campaign…");
+    setMsg("Opening campaign on-chain — this takes a few seconds…");
     try {
       await openCampaign(
-        account,
         targetUrl.trim(),
-        Number(pool),
+        poolNum,
         Number(payCritical),
         Number(payHigh),
         Number(payMedium),
         Number(payLow),
         isCritical
       );
-      setMsg(null);
       setTargetUrl("");
-      onOpened();
+      // hold busy through the reload so the list shows the new campaign
+      // before the button resets — no revert/manual-refresh flicker.
+      await onOpened();
+      setMsg(null);
+      setBusy(false);
     } catch (e: any) {
       setErr(e?.message ?? String(e));
       setMsg(null);
-    } finally {
       setBusy(false);
     }
   }
@@ -70,6 +90,11 @@ export function OpenCampaign({
 
       <label>Bounty pool (genUSDC)</label>
       <input type="number" value={pool} onChange={(e) => setPool(e.target.value)} />
+      {insufficient && (
+        <div className="inline-warn mono">
+          Pool exceeds your balance ({balance} genUSDC). Claim the faucet or lower the pool.
+        </div>
+      )}
 
       <div className="grid4">
         <div>
@@ -99,7 +124,7 @@ export function OpenCampaign({
         Predefined critical target (credible Critical claims escalate & pause the campaign)
       </label>
 
-      <button className="primary" onClick={submit} disabled={disabled || busy}>
+      <button className="primary" onClick={submit} disabled={disabled || busy || insufficient}>
         {busy ? "Opening…" : "Open campaign"}
       </button>
 

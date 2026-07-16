@@ -6,7 +6,7 @@ import { CampaignList } from "./components/CampaignList";
 import { CampaignDetail } from "./components/CampaignDetail";
 import { HowItWorks } from "./components/HowItWorks";
 import { Guide } from "./components/Guide";
-import { balanceOf, mint } from "./lib/contracts";
+import { balanceOf, mint, faucet, hasClaimedFaucet, getConfig } from "./lib/contracts";
 import "./index.css";
 
 type Tab = "protocol" | "how" | "guide";
@@ -20,6 +20,14 @@ export default function App() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("protocol");
+  const [ownerAddr, setOwnerAddr] = useState<string | null>(null);
+  const [claimedFaucet, setClaimedFaucet] = useState(false);
+
+  useEffect(() => {
+    getConfig()
+      .then((c) => setOwnerAddr(String(c.owner).toLowerCase()))
+      .catch(() => setOwnerAddr(null));
+  }, []);
 
   const refresh = useCallback(async () => {
     if (!address) return;
@@ -28,6 +36,8 @@ export default function App() {
     try {
       const b = await balanceOf(address);
       setBalance(b);
+      const claimed = await hasClaimedFaucet(address);
+      setClaimedFaucet(claimed);
     } catch (e: any) {
       setError(e?.message ?? String(e));
     } finally {
@@ -38,6 +48,8 @@ export default function App() {
   useEffect(() => {
     if (address) refresh();
   }, [address, refresh]);
+
+  const isOwner = address !== null && ownerAddr !== null && address.toLowerCase() === ownerAddr;
 
   async function mintSelf() {
     if (!address) return;
@@ -53,9 +65,22 @@ export default function App() {
     }
   }
 
-  function bumpRefresh() {
+  async function getFaucet() {
+    setMinting(true);
+    setError(null);
+    try {
+      await faucet();
+      await refresh();
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+    } finally {
+      setMinting(false);
+    }
+  }
+
+  async function bumpRefresh() {
     setRefreshKey((k) => k + 1);
-    refresh();
+    await refresh();
   }
 
   return (
@@ -102,9 +127,15 @@ export default function App() {
               className="mono"
             />
             {balance !== null && <span className="balance mono">{balance} genUSDC</span>}
-            <button onClick={mintSelf} disabled={minting || loading}>
-              {minting ? "Minting…" : "Mint 50000"}
-            </button>
+            {isOwner ? (
+              <button onClick={mintSelf} disabled={minting || loading}>
+                {minting ? "Minting…" : "Mint 50000"}
+              </button>
+            ) : (
+              <button onClick={getFaucet} disabled={minting || loading || claimedFaucet}>
+                {minting ? "Claiming…" : claimedFaucet ? "Faucet claimed" : "Get test faucet"}
+              </button>
+            )}
             <button onClick={refresh} disabled={loading || minting}>
               {loading ? "Reading…" : "Refresh"}
             </button>
@@ -146,7 +177,7 @@ export default function App() {
               />
             ) : (
               <>
-                <OpenCampaign account={address} disabled={loading || minting} onOpened={bumpRefresh} />
+                <OpenCampaign account={address} balance={balance} disabled={loading || minting} onOpened={bumpRefresh} />
                 <CampaignList refreshKey={refreshKey} onSelect={(id) => setSelected(id)} />
               </>
             )
@@ -155,7 +186,8 @@ export default function App() {
               <h2>Connect to begin</h2>
               <p className="hint">
                 Connect MetaMask for real signed transactions, or use Demo mode for a
-                throwaway burner wallet. New here? Open the Guide tab.
+                throwaway burner wallet. New here? Open the Guide tab, then click Get
+                test faucet for funds.
               </p>
             </div>
           ))}

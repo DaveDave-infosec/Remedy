@@ -10,6 +10,7 @@ class RemedyVerifier(gl.Contract):
     # --- verdict output storage (write-once per review, keyed by case_id) ---
     verdict_counter: u256
     case_ids: DynArray[str]
+    v_claim_id: TreeMap[str, str]
     v_target_url: TreeMap[str, str]
     v_claimed_severity: TreeMap[str, str]
     v_outcome: TreeMap[str, str]
@@ -31,6 +32,7 @@ class RemedyVerifier(gl.Contract):
     @gl.public.write
     def run_review(
         self,
+        claim_id: str,
         target_url: str,
         poc_text: str,
         patch_diff: str,
@@ -44,6 +46,7 @@ class RemedyVerifier(gl.Contract):
     ) -> str:
         case_id = "remedy_" + str(int(self.verdict_counter))
 
+        local_claim_id = claim_id
         local_url = target_url
         local_poc = poc_text
         local_patch = patch_diff
@@ -206,6 +209,7 @@ class RemedyVerifier(gl.Contract):
 
         self.verdict_counter = u256(int(self.verdict_counter) + 1)
         self.case_ids.append(case_id)
+        self.v_claim_id[case_id] = local_claim_id
         self.v_target_url[case_id] = local_url
         self.v_claimed_severity[case_id] = local_claimed
         self.v_outcome[case_id] = outcome
@@ -228,6 +232,7 @@ class RemedyVerifier(gl.Contract):
             return {}
         return {
             "case_id": case_id,
+            "claim_id": self.v_claim_id[case_id],
             "target_url": self.v_target_url[case_id],
             "claimed_severity": self.v_claimed_severity[case_id],
             "outcome": self.v_outcome[case_id],

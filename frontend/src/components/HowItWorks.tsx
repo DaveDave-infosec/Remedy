@@ -86,15 +86,43 @@ export function HowItWorks() {
           correspondingly less confidence.
         </li>
         <li>
-          <strong>Settlement relay.</strong> In V1, a verdict is relayed to payout via
-          an owner or project call. Each settlement is tied to the case id of the
-          verdict it applies. Fully automatic, trustless settlement is the V2 target.
+          <strong>Trustless settlement.</strong> Settlement is permissionless: anyone
+          can trigger it. The vault reads the verdict directly from the verifier
+          contract by case id, verifies the verdict is bound to that specific claim,
+          and applies the verifier&rsquo;s own outcome and amounts. No owner, project,
+          or other privileged party relays the result, and no caller supplies the
+          numbers &mdash; the payout is derived entirely from consensus.
         </li>
         <li>
           <strong>Scheduler.</strong> Reviews are run manually in V1. A scheduler is
           wired but optional.
         </li>
+        <li>
+          <strong>Testnet token.</strong> Bounty pools use GenUSDC, an embedded
+          testnet faucet token with no real value. Unlimited minting is owner-gated;
+          anyone can claim a one-time capped grant from the public faucet. A
+          production deployment would use a real bridged asset instead.
+        </li>
       </ul>
+
+      <h3 className="doc-scope">Verify it yourself</h3>
+      <div className="doc-callout doc-callout-review">
+        <p>
+          Settlement is provably permissionless. In this on-chain record, a wallet
+          with no relationship to the campaign, the claim, or any owner successfully
+          settled a bounty &mdash; the vault derived the outcome and amounts from the
+          verifier, not from the caller:
+        </p>
+        <p className="mono receipt-link">
+          <a
+            href="https://explorer-studio.genlayer.com/tx/0xabcc909ef7456054fd8fd477975a31564b24013205a5dac60be6ed39fec7ddfe"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            explorer-studio.genlayer.com/tx/0xabcc909e…fec7ddfe
+          </a>
+        </p>
+      </div>
 
       <p className="doc-foot mono">
         One resolution engine, expandable later: the settlement and lifecycle logic

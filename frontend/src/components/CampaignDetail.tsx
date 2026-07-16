@@ -85,10 +85,16 @@ export function CampaignDetail({
   }, [load]);
 
   const onSettledClaim = useCallback(
-    (claimId: string) => {
+    async (claimId: string) => {
       setJustSettled(claimId);
-      load();
-      setTimeout(() => setJustSettled(null), 1200);
+      // reload a few times over the confirm window so the resolved state
+      // lands before we clear the settling placeholder — no open-row flicker.
+      await load();
+      await new Promise((r) => setTimeout(r, 1500));
+      await load();
+      await new Promise((r) => setTimeout(r, 1500));
+      await load();
+      setJustSettled(null);
     },
     [load]
   );
@@ -145,7 +151,13 @@ export function CampaignDetail({
             </div>
           )}
 
-          {cam && cam.status === "active" && cl.status === "open" && (
+          {cam && cam.status === "active" && cl.status === "open" && justSettled === cl.claim_id && (
+            <div className="settling-panel mono">
+              <span className="settling-dot" aria-hidden="true" />
+              Finalizing settlement — updating on-chain state…
+            </div>
+          )}
+          {cam && cam.status === "active" && cl.status === "open" && justSettled !== cl.claim_id && (
             <ClaimActions
               account={account}
               claim={cl}
@@ -166,7 +178,7 @@ export function CampaignDetail({
         ← all campaigns
       </button>
 
-      {loading && <div className="msg mono">Reading campaign…</div>}
+      {loading && !cam && <div className="msg mono">Reading campaign…</div>}
       {err && <div className="error mono">{err}</div>}
 
       {cam && (

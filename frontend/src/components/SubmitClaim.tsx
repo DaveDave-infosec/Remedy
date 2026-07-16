@@ -33,7 +33,6 @@ export function SubmitClaim({
     try {
       const submittedAt = new Date().toISOString();
       await submitClaim(
-        account,
         campaignId,
         submittedAt,
         targetUrl,
