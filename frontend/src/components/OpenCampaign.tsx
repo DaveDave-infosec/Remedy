@@ -98,19 +98,19 @@ export function OpenCampaign({
 
       <div className="grid4">
         <div>
-          <label>Critical</label>
+          <label className="pay-crit">Critical</label>
           <input type="number" value={payCritical} onChange={(e) => setPayCritical(e.target.value)} />
         </div>
         <div>
-          <label>High</label>
+          <label className="pay-high">High</label>
           <input type="number" value={payHigh} onChange={(e) => setPayHigh(e.target.value)} />
         </div>
         <div>
-          <label>Medium</label>
+          <label className="pay-med">Medium</label>
           <input type="number" value={payMedium} onChange={(e) => setPayMedium(e.target.value)} />
         </div>
         <div>
-          <label>Low</label>
+          <label className="pay-low">Low</label>
           <input type="number" value={payLow} onChange={(e) => setPayLow(e.target.value)} />
         </div>
       </div>

@@ -6,6 +6,7 @@ import { CampaignList } from "./components/CampaignList";
 import { CampaignDetail } from "./components/CampaignDetail";
 import { HowItWorks } from "./components/HowItWorks";
 import { Guide } from "./components/Guide";
+import { Landing } from "./components/Landing";
 import { balanceOf, mint, faucet, hasClaimedFaucet, getConfig } from "./lib/contracts";
 import "./index.css";
 
@@ -13,6 +14,7 @@ type Tab = "protocol" | "how" | "guide";
 
 export default function App() {
   const { address, mode, connectMetaMask, useDemo, newDemoWallet, disconnect } = useWallet();
+  const [view, setView] = useState<"landing" | "app">("landing");
   const [balance, setBalance] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [minting, setMinting] = useState(false);
@@ -83,11 +85,15 @@ export default function App() {
     await refresh();
   }
 
+  if (view === "landing") {
+    return <Landing onEnter={() => setView("app")} />;
+  }
+
   return (
     <div className="app-shell">
       <header className="app-header">
         <div className="masthead">
-          <span className="brand">REMEDY</span>
+          <span className="brand" style={{ cursor: "pointer" }} onClick={() => setView("landing")}>REMEDY</span>
           <span className="register-line">security resolution protocol</span>
         </div>
         <span className="tagline">Consensus security settlement</span>

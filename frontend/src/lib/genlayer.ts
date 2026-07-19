@@ -82,6 +82,19 @@ function isBusy(e: any): boolean {
   return m.includes("busy") || m.includes("slots") || m.includes("retry") || m.includes("not supported");
 }
 
+function isNetwork(e: any): boolean {
+  const m = String((e && e.message) || e).toLowerCase();
+  return (
+    m.includes("failed to fetch") ||
+    m.includes("fetch failed") ||
+    m.includes("network") ||
+    m.includes("timeout") ||
+    m.includes("timed out") ||
+    m.includes("load failed") ||
+    m.includes("connection")
+  );
+}
+
 export async function readContract(address: string, functionName: string, args: unknown[] = []) {
   const client = getReadClient();
   let lastErr: any;
@@ -90,12 +103,19 @@ export async function readContract(address: string, functionName: string, args: 
       return await client.readContract({ address, functionName, args });
     } catch (e: any) {
       lastErr = e;
-      if (isBusy(e)) {
+      // Retry transient node conditions AND network blips (reads are idempotent).
+      if (isBusy(e) || isNetwork(e)) {
         await new Promise((r) => setTimeout(r, 900 * (attempt + 1)));
         continue;
       }
       throw e;
     }
+  }
+  // Exhausted retries: give a calm, accurate message for a network outage.
+  if (isNetwork(lastErr)) {
+    throw new Error(
+      "Can't reach the GenLayer Studio network right now. It may be briefly unavailable. Wait a moment and hit Refresh."
+    );
   }
   throw lastErr;
 }

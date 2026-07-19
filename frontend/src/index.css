@@ -375,3 +375,27 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .receipt-link { font-size: 11px; margin-top: 8px; word-break: break-all; }
 .receipt-link a { color: var(--low); text-decoration: underline; }
 .receipt-link a:hover { color: var(--text); }
+
+/* --- app-polish batch (PATCH-B) --- */
+
+/* 1. masthead alignment (match the landing) */
+.masthead { align-items: center; }
+.register-line { line-height: 2; }
+
+/* 2. severity payout labels tinted */
+.panel label.pay-crit { color: var(--crit); }
+.panel label.pay-high { color: var(--high); }
+.panel label.pay-med { color: var(--med); }
+.panel label.pay-low { color: var(--low); }
+
+/* 3. checkbox gap */
+.check { gap: 0; }
+.check input[type="checkbox"] { margin-right: 10px; }
+
+/* 5. cohesion hover on campaign rows */
+.camrow { transition: border-color 0.18s ease, background-color 0.18s ease; }
+.camrow:hover { border-color: var(--text-dim); background: var(--surface-2); }
+
+/* 6. verdict panel fades into view */
+@keyframes remVerdictIn { from { opacity: 0; } to { opacity: 1; } }
+.verdict { animation: remVerdictIn 160ms ease both; }
