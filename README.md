@@ -64,6 +64,7 @@ On CredencePayout the verifier rewarded the real unchecked-call bug, rejected a 
 - The verifier reasons over readable source in any language, but verdict quality is strongest for well-documented contract languages, Solidity most of all.
 - Reviews are run manually in V1. A scheduler is wired but optional.
 - GenUSDC is an embedded testnet token with no real value. A production deployment would use a real bridged asset.
+- A project can submit a claim on its own campaign. This is economically pointless: the pool is the project's own funds, so a self-payout only returns their deposit minus the protocol fee. It also cannot be cleanly prevented on-chain, since a project could fund from one wallet and submit from another. Credibility is still decided by consensus, so a project cannot force a payout on a claim that is not genuine.
 
 ## Run it
 
