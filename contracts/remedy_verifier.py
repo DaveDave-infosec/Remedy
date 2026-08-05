@@ -6,6 +6,8 @@ import json
 class RemedyVerifier(gl.Contract):
     # --- config ---
     owner: str
+    vault: Address
+    vault_set: bool
 
     # --- verdict output storage (write-once per review, keyed by case_id) ---
     verdict_counter: u256
@@ -24,40 +26,64 @@ class RemedyVerifier(gl.Contract):
     v_original_bps: TreeMap[str, u256]
     v_duplicate_bps: TreeMap[str, u256]
 
+    # --- one authorized verdict per claim ---
+    case_for_claim: TreeMap[str, str]
+
+    # --- patch re-verification results (for HoldForPatch escrow release) ---
+    fix_checked: TreeMap[str, bool]
+    fix_verified: TreeMap[str, bool]
+    fix_reasoning: TreeMap[str, str]
+
     def __init__(self, owner_address: str):
         self.owner = owner_address.lower()
+        self.vault_set = False
         self.verdict_counter = u256(0)
 
-    # ---------- the core review (single claim + dedup against priors) ----------
+    # ---------- one-time vault wiring (owner-gated) ----------
     @gl.public.write
-    def run_review(
-        self,
-        claim_id: str,
-        target_url: str,
-        poc_text: str,
-        patch_diff: str,
-        claimed_severity: str,
-        sev_critical_payout: int,
-        sev_high_payout: int,
-        sev_medium_payout: int,
-        sev_low_payout: int,
-        is_critical_target: bool,
-        prior_claims_json: str,
-    ) -> str:
+    def set_vault(self, vault_address: str):
+        sender = gl.message.sender_address.as_hex.lower()
+        if sender != self.owner:
+            raise gl.vm.UserError("only owner may set the vault")
+        if self.vault_set:
+            raise gl.vm.UserError("vault already set")
+        self.vault = Address(vault_address)
+        self.vault_set = True
+
+    # ---------- the core review (canonical state read from the vault) ----------
+    @gl.public.write
+    def run_review(self, claim_id: str) -> str:
+        if not self.vault_set:
+            raise gl.vm.UserError("vault not configured")
+        if claim_id in self.case_for_claim:
+            raise gl.vm.UserError("claim already reviewed")
+
+        vf = gl.get_contract_at(self.vault)
+        claim = vf.view().get_claim(claim_id)
+        if not claim or "campaign_id" not in claim:
+            raise gl.vm.UserError("unknown claim")
+        campaign_id = str(claim["campaign_id"])
+        campaign = vf.view().get_campaign(campaign_id)
+        if not campaign or "status" not in campaign:
+            raise gl.vm.UserError("unknown campaign")
+
         case_id = "remedy_" + str(int(self.verdict_counter))
 
+        # canonical inputs, read from the vault (never from the caller)
         local_claim_id = claim_id
-        local_url = target_url
-        local_poc = poc_text
-        local_patch = patch_diff
-        local_claimed = claimed_severity
-        local_is_critical = is_critical_target
-        pay_c = int(sev_critical_payout)
-        pay_h = int(sev_high_payout)
-        pay_m = int(sev_medium_payout)
-        pay_l = int(sev_low_payout)
+        local_url = str(claim["target_url"])
+        local_poc = str(claim["poc_text"])
+        local_patch = str(claim["patch_diff"])
+        local_claimed = str(claim["claimed_severity"])
+        local_is_critical = bool(campaign["is_critical_target"])
+        pay_c = int(campaign["pay_critical"])
+        pay_h = int(campaign["pay_high"])
+        pay_m = int(campaign["pay_medium"])
+        pay_l = int(campaign["pay_low"])
 
-        # build a readable priors block (deterministic, from param)
+        prior_claims_json = vf.view().get_priors_json(campaign_id, claim_id)
+
+        # build a readable priors block (deterministic)
         priors_text = "(none)"
         try:
             priors = json.loads(prior_claims_json)
@@ -223,7 +249,74 @@ class RemedyVerifier(gl.Contract):
         self.v_original_bps[case_id] = u256(original_bps if original_bps > 0 else 0)
         self.v_duplicate_bps[case_id] = u256(duplicate_bps if duplicate_bps > 0 else 0)
 
+        # lock this as the one authorized verdict for the claim
+        self.case_for_claim[local_claim_id] = case_id
+
         return case_id
+
+    # ---------- patch re-verification (for HoldForPatch escrow release) ----------
+    @gl.public.write
+    def verify_fix(self, claim_id: str) -> bool:
+        if not self.vault_set:
+            raise gl.vm.UserError("vault not configured")
+
+        vf = gl.get_contract_at(self.vault)
+        claim = vf.view().get_claim(claim_id)
+        if not claim or "target_url" not in claim:
+            raise gl.vm.UserError("unknown claim")
+
+        local_url = str(claim["target_url"])
+        local_poc = str(claim["poc_text"])
+
+        def fetch_current() -> str:
+            response = gl.nondet.web.get(local_url)
+            body = response.body.decode("utf-8")
+            return body[:3000]
+
+        current = gl.eq_principle.strict_eq(fetch_current)
+        local_current = current
+
+        def get_input() -> str:
+            return (
+                "ORIGINAL VULNERABILITY (previously reported and accepted):\n"
+                + local_poc
+                + "\n\nCURRENT TARGET CONTRACT SOURCE (re-fetched now from "
+                + local_url + "):\n"
+                + local_current
+            )
+
+        task = (
+            "You are verifying whether a previously accepted smart-contract "
+            "vulnerability has now been FIXED in the current source. You are given "
+            "the ORIGINAL VULNERABILITY description and the CURRENT source re-fetched "
+            "from the locked target. Judge ONLY from the static code. Decide whether "
+            "the specific flaw described is now genuinely closed in the current "
+            "source (a proper check added, ordering corrected, a guard in place, "
+            "and so on). Do NOT accept a cosmetic or unrelated change as a fix. "
+            "Return ONLY one JSON object with keys: fixed (boolean; true only if the "
+            "original flaw is genuinely closed in the current source), reasoning "
+            "(1-2 sentences grounded in the actual current code)."
+        )
+        criteria_check = (
+            "The response is exactly one valid JSON object with a boolean 'fixed' "
+            "and a non-empty 'reasoning' grounded in the current source. 'fixed' is "
+            "true only when the specific original flaw is genuinely closed."
+        )
+
+        raw = gl.eq_principle.prompt_non_comparative(
+            get_input,
+            task=task,
+            criteria=criteria_check,
+        )
+
+        parsed = json.loads(raw)
+        fixed = bool(parsed["fixed"])
+        reasoning = str(parsed["reasoning"])
+
+        self.fix_checked[claim_id] = True
+        self.fix_verified[claim_id] = fixed
+        self.fix_reasoning[claim_id] = reasoning
+        return fixed
 
     # ---------- views ----------
     @gl.public.view
@@ -245,6 +338,20 @@ class RemedyVerifier(gl.Contract):
             "duplicate_of_seq": int(self.v_duplicate_of_seq[case_id]),
             "original_bps": int(self.v_original_bps[case_id]),
             "duplicate_bps": int(self.v_duplicate_bps[case_id]),
+        }
+
+    @gl.public.view
+    def get_case_for_claim(self, claim_id: str) -> str:
+        return self.case_for_claim[claim_id] if claim_id in self.case_for_claim else ""
+
+    @gl.public.view
+    def get_fix_result(self, claim_id: str) -> dict:
+        if claim_id not in self.fix_checked:
+            return {"checked": False, "fixed": False, "reasoning": ""}
+        return {
+            "checked": True,
+            "fixed": self.fix_verified[claim_id],
+            "reasoning": self.fix_reasoning[claim_id],
         }
 
     @gl.public.view

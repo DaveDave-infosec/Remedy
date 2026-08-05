@@ -49,7 +49,23 @@ export function SubmitClaim({
       setMsg(null);
       setBusy(false);
     } catch (e: any) {
-      setErr(e?.message ?? String(e));
+      const raw = e?.message ?? String(e);
+      const netlike =
+        raw.toLowerCase().includes("fetch") ||
+        raw.toLowerCase().includes("network") ||
+        raw.toLowerCase().includes("timeout");
+      if (netlike) {
+        // The node did not confirm, but the claim may still have landed on-chain.
+        // Refresh the list so it becomes visible, and warn against a re-submit.
+        try {
+          await onSubmitted();
+        } catch {}
+        setErr(
+          "The node did not respond. Your claim may still have been submitted — check the claims list above before submitting again."
+        );
+      } else {
+        setErr(raw);
+      }
       setMsg(null);
       setBusy(false);
     }

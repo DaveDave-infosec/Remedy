@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { getCampaign, getClaimsForCampaign, getClaim } from "../lib/contracts";
+import { getCampaign, getClaimsForCampaign, getClaim, resumeCampaign } from "../lib/contracts";
 import { SubmitClaim } from "./SubmitClaim";
 import { ClaimActions } from "./ClaimActions";
 import { SeveritySeal } from "./SeveritySeal";
@@ -58,6 +58,7 @@ export function CampaignDetail({
   const [err, setErr] = useState<string | null>(null);
   const [justSettled, setJustSettled] = useState<string | null>(null);
   const [showResolved, setShowResolved] = useState(false);
+  const [resuming, setResuming] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -98,6 +99,19 @@ export function CampaignDetail({
     },
     [load]
   );
+
+  async function doResume() {
+    setErr(null);
+    setResuming(true);
+    try {
+      await resumeCampaign(campaignId);
+      await load();
+    } catch (e: any) {
+      setErr(e?.message ?? String(e));
+    } finally {
+      setResuming(false);
+    }
+  }
 
   const openClaims = claims.filter((c) => c.status === "open");
   const resolvedClaims = claims.filter((c) => c.status !== "open");
@@ -167,6 +181,16 @@ export function CampaignDetail({
               onSettled={() => onSettledClaim(cl.claim_id)}
             />
           )}
+          {cam && cl.status === "held" && (
+            <ClaimActions
+              account={account}
+              claim={cl}
+              campaign={cam}
+              siblingClaims={claims}
+              disabled={disabled}
+              onSettled={() => onSettledClaim(cl.claim_id)}
+            />
+          )}
         </div>
       </div>
     );
@@ -227,6 +251,11 @@ export function CampaignDetail({
               Campaign paused (a critical claim escalated). No further submissions or
               settlement.
             </div>
+          )}
+          {cam.status === "paused" && (
+            <button className="primary small" onClick={doResume} disabled={resuming}>
+              {resuming ? "Resuming…" : "Resume campaign"}
+            </button>
           )}
         </>
       )}

@@ -68,7 +68,7 @@ class RemedyVault(gl.Contract):
     def mint(self, to_address: str, amount: int):
         sender = gl.message.sender_address.as_hex.lower()
         if sender != self.owner:
-            raise gl.UserError("only owner may mint testnet tokens")
+            raise gl.vm.UserError("only owner may mint testnet tokens")
         to_address = to_address.lower()
         cur = self.balances[to_address] if to_address in self.balances else u256(0)
         self.balances[to_address] = u256(int(cur) + amount)
@@ -78,7 +78,7 @@ class RemedyVault(gl.Contract):
     def faucet(self):
         sender = gl.message.sender_address.as_hex.lower()
         if sender in self.faucet_claimed and self.faucet_claimed[sender]:
-            raise gl.UserError("faucet already claimed for this address")
+            raise gl.vm.UserError("faucet already claimed for this address")
         self.faucet_claimed[sender] = True
         cur = self.balances[sender] if sender in self.balances else u256(0)
         self.balances[sender] = u256(int(cur) + 50000)
@@ -117,10 +117,10 @@ class RemedyVault(gl.Contract):
         project = gl.message.sender_address.as_hex.lower()
         amt = int(pool_amount)
         if amt <= 0:
-            raise gl.UserError("pool must be positive")
+            raise gl.vm.UserError("pool must be positive")
         bal = int(self.balances[project]) if project in self.balances else 0
         if bal < amt:
-            raise gl.UserError("insufficient GenUSDC balance for pool")
+            raise gl.vm.UserError("insufficient GenUSDC balance for pool")
 
         campaign_id = "cam_" + str(int(self.campaign_counter))
         self.campaign_counter = u256(int(self.campaign_counter) + 1)
@@ -153,9 +153,9 @@ class RemedyVault(gl.Contract):
         claimed_severity: str,
     ) -> str:
         if campaign_id not in self.cam_status:
-            raise gl.UserError("unknown campaign")
+            raise gl.vm.UserError("unknown campaign")
         if self.cam_status[campaign_id] != "active":
-            raise gl.UserError("campaign not active")
+            raise gl.vm.UserError("campaign not active")
 
         submitter = gl.message.sender_address.as_hex.lower()
         claim_id = "clm_" + str(int(self.claim_counter))
@@ -169,7 +169,8 @@ class RemedyVault(gl.Contract):
         self.cl_seq[claim_id] = u256(seq)
         self.cl_submitter[claim_id] = submitter
         self.cl_submitted_at[claim_id] = submitted_at
-        self.cl_target_url[claim_id] = target_url
+        # target is fixed by the campaign; the claim inherits the campaign's locked target
+        self.cl_target_url[claim_id] = self.cam_target_url[campaign_id]
         self.cl_poc_text[claim_id] = poc_text
         self.cl_patch_diff[claim_id] = patch_diff
         self.cl_claimed_severity[claim_id] = claimed_severity
@@ -206,7 +207,7 @@ class RemedyVault(gl.Contract):
             })
         return json.dumps(out)
 
-    # ---------- helper: find a sibling claim by seq on a campaign ----------
+    # ---------- helpers ----------
     def _find_claim_by_seq(self, campaign_id: str, seq: int) -> str:
         for i in range(len(self.claim_ids)):
             cid = self.claim_ids[i]
@@ -214,32 +215,45 @@ class RemedyVault(gl.Contract):
                 return cid
         return ""
 
-    # ---------- TRUSTLESS SETTLEMENT (permissionless; reads verifier directly) ----------
+    def _payout_for(self, campaign_id: str, severity: str) -> int:
+        if severity == "Critical":
+            return int(self.cam_pay_critical[campaign_id])
+        if severity == "High":
+            return int(self.cam_pay_high[campaign_id])
+        if severity == "Medium":
+            return int(self.cam_pay_medium[campaign_id])
+        if severity == "Low":
+            return int(self.cam_pay_low[campaign_id])
+        return 0
+
+    # ---------- TRUSTLESS SETTLEMENT (permissionless; canonical verdict from verifier) ----------
     @gl.public.write
-    def settle_claim(self, claim_id: str, case_id: str) -> str:
+    def settle_claim(self, claim_id: str) -> str:
         if claim_id not in self.cl_status:
-            raise gl.UserError("unknown claim")
+            raise gl.vm.UserError("unknown claim")
         if self.cl_status[claim_id] != "open":
-            raise gl.UserError("claim already resolved")
+            raise gl.vm.UserError("claim already resolved")
         campaign_id = self.cl_campaign[claim_id]
         if self.cam_status[campaign_id] == "paused":
-            raise gl.UserError("campaign paused; no further settlement")
+            raise gl.vm.UserError("campaign paused; no further settlement")
 
+        # derive the ONE authorized verdict for this claim from the verifier
         vf = gl.get_contract_at(self.verifier)
+        case_id = str(vf.view().get_case_for_claim(claim_id))
+        if case_id == "":
+            raise gl.vm.UserError("no verdict for this claim yet")
         v = vf.view().get_verdict(case_id)
         if not v or "outcome" not in v:
-            raise gl.UserError("verdict not found on verifier")
+            raise gl.vm.UserError("verdict not found on verifier")
 
-        v_claim = str(v["claim_id"])
-        if v_claim != claim_id:
-            raise gl.UserError("verdict is for a different claim")
-        v_target = str(v["target_url"])
-        if v_target != self.cl_target_url[claim_id]:
-            raise gl.UserError("verdict target does not match claim target")
+        # bind the verdict to THIS claim and its locked target
+        if str(v["claim_id"]) != claim_id:
+            raise gl.vm.UserError("verdict is for a different claim")
+        if str(v["target_url"]) != self.cl_target_url[claim_id]:
+            raise gl.vm.UserError("verdict target does not match claim target")
 
         outcome = str(v["outcome"])
         severity = str(v["severity"])
-        payout = int(v["payout"])
         reasoning = str(v["reasoning"])
         minority_note = str(v["minority_note"])
 
@@ -250,6 +264,10 @@ class RemedyVault(gl.Contract):
 
         pool = int(self.cam_pool[campaign_id])
         fee_bps = int(self.protocol_fee_bps)
+
+        # AUTHORITATIVE payout: recomputed from this campaign's own on-chain schedule
+        # for the severity consensus assigned. The verifier's payout number is never trusted.
+        payout = self._payout_for(campaign_id, severity)
 
         if outcome == "Reject":
             self.cl_outcome[claim_id] = "Reject"
@@ -265,7 +283,7 @@ class RemedyVault(gl.Contract):
 
         if outcome == "Reward":
             if payout > pool:
-                raise gl.UserError("payout exceeds remaining pool")
+                raise gl.vm.UserError("payout exceeds remaining pool")
             submitter = self.cl_submitter[claim_id]
             fee = payout * fee_bps // 10000
             net = payout - fee
@@ -283,7 +301,7 @@ class RemedyVault(gl.Contract):
 
         if outcome == "HoldForPatch":
             if payout > pool:
-                raise gl.UserError("escrow exceeds remaining pool")
+                raise gl.vm.UserError("escrow exceeds remaining pool")
             self.cam_pool[campaign_id] = u256(pool - payout)
             self.cam_escrowed[campaign_id] = u256(int(self.cam_escrowed[campaign_id]) + payout)
             self.cl_outcome[claim_id] = "HoldForPatch"
@@ -295,14 +313,14 @@ class RemedyVault(gl.Contract):
             dup_seq = int(v["duplicate_of_seq"])
             original_claim_id = self._find_claim_by_seq(campaign_id, dup_seq)
             if original_claim_id == "" or original_claim_id == claim_id:
-                raise gl.UserError("original claim for merge not found")
+                raise gl.vm.UserError("original claim for merge not found")
             o_bps = int(v["original_bps"])
             d_bps = int(v["duplicate_bps"])
             if o_bps + d_bps != 10000:
-                raise gl.UserError("attribution bps must sum to 10000")
+                raise gl.vm.UserError("attribution bps must sum to 10000")
             total = payout
             if total > pool:
-                raise gl.UserError("total payout exceeds remaining pool")
+                raise gl.vm.UserError("total payout exceeds remaining pool")
 
             orig_gross = total * o_bps // 10000
             dup_gross = total - orig_gross
@@ -310,23 +328,25 @@ class RemedyVault(gl.Contract):
             dup_fee = dup_gross * fee_bps // 10000
             orig_net = orig_gross - orig_fee
             dup_net = dup_gross - dup_fee
-            total_fee = orig_fee + dup_fee
 
-            orig_sub = self.cl_submitter[original_claim_id]
+            # always pay the later duplicate its share
             dup_sub = self.cl_submitter[claim_id]
-
-            obal = int(self.balances[orig_sub]) if orig_sub in self.balances else 0
-            self.balances[orig_sub] = u256(obal + orig_net)
             dbal = int(self.balances[dup_sub]) if dup_sub in self.balances else 0
             self.balances[dup_sub] = u256(dbal + dup_net)
-            if total_fee > 0:
-                fbal = int(self.balances[self.fee_wallet]) if self.fee_wallet in self.balances else 0
-                self.balances[self.fee_wallet] = u256(fbal + total_fee)
+            distributed_net = dup_net
+            distributed_fee = dup_fee
+            pool_spent = dup_gross
 
-            self.cam_pool[campaign_id] = u256(pool - total)
-            self.cam_paid_total[campaign_id] = u256(int(self.cam_paid_total[campaign_id]) + orig_net + dup_net)
-
-            if self.cl_status[original_claim_id] == "open":
+            # pay the FIRST reporter their share ONLY if their claim is still open
+            # (never pay an already-resolved original a second time)
+            original_open = self.cl_status[original_claim_id] == "open"
+            if original_open:
+                orig_sub = self.cl_submitter[original_claim_id]
+                obal = int(self.balances[orig_sub]) if orig_sub in self.balances else 0
+                self.balances[orig_sub] = u256(obal + orig_net)
+                distributed_net = distributed_net + orig_net
+                distributed_fee = distributed_fee + orig_fee
+                pool_spent = pool_spent + orig_gross
                 self.cl_outcome[original_claim_id] = "MergeDuplicate"
                 self.cl_status[original_claim_id] = "rewarded"
                 self.cl_severity[original_claim_id] = severity
@@ -335,6 +355,13 @@ class RemedyVault(gl.Contract):
                 self.cl_merged_with[original_claim_id] = claim_id
                 self.cl_attribution_bps[original_claim_id] = u256(o_bps)
 
+            if distributed_fee > 0:
+                fbal = int(self.balances[self.fee_wallet]) if self.fee_wallet in self.balances else 0
+                self.balances[self.fee_wallet] = u256(fbal + distributed_fee)
+
+            self.cam_pool[campaign_id] = u256(pool - pool_spent)
+            self.cam_paid_total[campaign_id] = u256(int(self.cam_paid_total[campaign_id]) + distributed_net)
+
             self.cl_outcome[claim_id] = "MergeDuplicate"
             self.cl_status[claim_id] = "rewarded"
             self.cl_payout[claim_id] = u256(dup_net)
@@ -342,21 +369,101 @@ class RemedyVault(gl.Contract):
             self.cl_attribution_bps[claim_id] = u256(d_bps)
             return "MergeDuplicate"
 
-        raise gl.UserError("unknown outcome from verifier")
+        raise gl.vm.UserError("unknown outcome from verifier")
+
+    # ---------- HoldForPatch completion: release escrow once the fix is verified ----------
+    # Permissionless: pays only if the verifier's re-review confirms the fix. No discretion.
+    @gl.public.write
+    def release_escrow(self, claim_id: str) -> str:
+        if claim_id not in self.cl_status:
+            raise gl.vm.UserError("unknown claim")
+        if self.cl_status[claim_id] != "held":
+            raise gl.vm.UserError("claim is not held for patch")
+        campaign_id = self.cl_campaign[claim_id]
+
+        vf = gl.get_contract_at(self.verifier)
+        fix = vf.view().get_fix_result(claim_id)
+        if not fix or "checked" not in fix:
+            raise gl.vm.UserError("verifier returned no fix result")
+        if not bool(fix["checked"]):
+            raise gl.vm.UserError("no patch verification yet; run verify_fix first")
+        if not bool(fix["fixed"]):
+            raise gl.vm.UserError("fix not verified; escrow not releasable")
+
+        escrowed = int(self.cl_escrowed[claim_id])
+        fee_bps = int(self.protocol_fee_bps)
+        fee = escrowed * fee_bps // 10000
+        net = escrowed - fee
+        submitter = self.cl_submitter[claim_id]
+        sbal = int(self.balances[submitter]) if submitter in self.balances else 0
+        self.balances[submitter] = u256(sbal + net)
+        if fee > 0:
+            fbal = int(self.balances[self.fee_wallet]) if self.fee_wallet in self.balances else 0
+            self.balances[self.fee_wallet] = u256(fbal + fee)
+        self.cam_escrowed[campaign_id] = u256(int(self.cam_escrowed[campaign_id]) - escrowed)
+        self.cam_paid_total[campaign_id] = u256(int(self.cam_paid_total[campaign_id]) + net)
+        self.cl_escrowed[claim_id] = u256(0)
+        self.cl_payout[claim_id] = u256(net)
+        self.cl_outcome[claim_id] = "Reward"
+        self.cl_status[claim_id] = "rewarded"
+        return "released"
+
+    # ---------- HoldForPatch completion: refund stuck escrow to the pool ----------
+    # Project-gated, and ONLY while the fix is unverified (a verified fix must be
+    # released to the submitter, never refunded away from them).
+    @gl.public.write
+    def refund_escrow(self, claim_id: str) -> str:
+        if claim_id not in self.cl_status:
+            raise gl.vm.UserError("unknown claim")
+        if self.cl_status[claim_id] != "held":
+            raise gl.vm.UserError("claim is not held for patch")
+        campaign_id = self.cl_campaign[claim_id]
+        project = self.cam_project[campaign_id]
+        sender = gl.message.sender_address.as_hex.lower()
+        if sender != project:
+            raise gl.vm.UserError("only the campaign project may refund escrow")
+
+        vf = gl.get_contract_at(self.verifier)
+        fix = vf.view().get_fix_result(claim_id)
+        if fix and "checked" in fix and bool(fix["checked"]) and bool(fix["fixed"]):
+            raise gl.vm.UserError("fix is verified; escrow must be released to the submitter")
+
+        escrowed = int(self.cl_escrowed[claim_id])
+        self.cam_escrowed[campaign_id] = u256(int(self.cam_escrowed[campaign_id]) - escrowed)
+        self.cam_pool[campaign_id] = u256(int(self.cam_pool[campaign_id]) + escrowed)
+        self.cl_escrowed[claim_id] = u256(0)
+        self.cl_payout[claim_id] = u256(0)
+        self.cl_outcome[claim_id] = "Reject"
+        self.cl_status[claim_id] = "rejected"
+        return "refunded"
+
+    # ---------- Escalate completion: project resumes a paused campaign ----------
+    @gl.public.write
+    def resume_campaign(self, campaign_id: str) -> str:
+        if campaign_id not in self.cam_status:
+            raise gl.vm.UserError("unknown campaign")
+        project = self.cam_project[campaign_id]
+        sender = gl.message.sender_address.as_hex.lower()
+        if sender != project:
+            raise gl.vm.UserError("only the campaign project may resume it")
+        if self.cam_status[campaign_id] != "paused":
+            raise gl.vm.UserError("campaign is not paused")
+        self.cam_status[campaign_id] = "active"
+        return "resumed"
 
     # ---------- claim dismissal (real sender; project or submitter; no payout) ----------
     @gl.public.write
     def dismiss_claim(self, claim_id: str):
         if claim_id not in self.cl_status:
-            raise gl.UserError("unknown claim")
+            raise gl.vm.UserError("unknown claim")
         campaign_id = self.cl_campaign[claim_id]
         project = self.cam_project[campaign_id]
         submitter = self.cl_submitter[claim_id]
         sender = gl.message.sender_address.as_hex.lower()
         if sender != project and sender != submitter:
-            raise gl.UserError("only the campaign project or the claim submitter can dismiss")
+            raise gl.vm.UserError("only the campaign project or the claim submitter can dismiss")
         if self.cl_status[claim_id] != "open":
-            raise gl.UserError("only open claims can be dismissed")
+            raise gl.vm.UserError("only open claims can be dismissed")
         self.cl_outcome[claim_id] = "Dismissed"
         self.cl_status[claim_id] = "dismissed"
         self.cl_payout[claim_id] = u256(0)

@@ -303,14 +303,14 @@ export function Landing({ onEnter }: LandingProps) {
             <div className="lp-ex-row">
               <span className="lp-ex-k">TX</span>
               <span className="lp-ex-v lp-ex-hash">
-                0xabcc909ef7456054fd8fd477975a31564b24013205a5dac60be6ed39fec7ddfe
+                0xee0e886feebf45b6de68f00bc18a6e10ade17d00a9a491bbdd77c64c3c32cb69
               </span>
             </div>
           </div>
           
           <a
             className="lp-exhibit-link"
-            href="https://explorer-studio.genlayer.com/tx/0xabcc909ef7456054fd8fd477975a31564b24013205a5dac60be6ed39fec7ddfe"
+            href="https://explorer-studio.genlayer.com/tx/0xee0e886feebf45b6de68f00bc18a6e10ade17d00a9a491bbdd77c64c3c32cb69"
             target="_blank"
             rel="noopener noreferrer"
           >

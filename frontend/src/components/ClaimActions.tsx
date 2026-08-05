@@ -1,10 +1,12 @@
 import { useState } from "react";
 import {
-  getPriorsJson,
   runReview,
   getVerdict,
   settleClaim,
   dismissClaim,
+  verifyFix,
+  releaseEscrow,
+  refundEscrow,
 } from "../lib/contracts";
 import { PhaseLadder } from "./PhaseLadder";
 
@@ -62,6 +64,9 @@ export function ClaimActions({
   const [phase, setPhase] = useState<number>(-1);
   const [settling, setSettling] = useState(false);
   const [dismissing, setDismissing] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [releasing, setReleasing] = useState(false);
+  const [refunding, setRefunding] = useState(false);
   const [confirmDismiss, setConfirmDismiss] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -69,29 +74,27 @@ export function ClaimActions({
     setErr(null);
     setBusy(true);
     try {
-      setPhase(0);
-      const priorsJson = await getPriorsJson(campaign.campaign_id, claim.claim_id);
-
       setPhase(1);
-      await runReview(
-        claim.claim_id,
-        claim.target_url,
-        claim.poc_text,
-        claim.patch_diff,
-        claim.claimed_severity,
-        campaign.pay_critical,
-        campaign.pay_high,
-        campaign.pay_medium,
-        campaign.pay_low,
-        campaign.is_critical_target,
-        priorsJson
-      );
+      let reviewError: any = null;
+      try {
+        await runReview(claim.claim_id);
+      } catch (e: any) {
+        reviewError = e;
+      }
 
       setPhase(2);
-      const v = await resolveVerdictForClaim();
+      // A review is a heavy consensus write (web fetch + model), so the verdict can
+      // land a little after runReview returns or times out. Poll the read for a while
+      // before declaring anything wrong; reads already retry transient node blips.
+      let v = await resolveVerdictForClaim();
+      for (let i = 0; i < 12 && !v; i++) {
+        await new Promise((r) => setTimeout(r, 3500));
+        v = await resolveVerdictForClaim();
+      }
       if (!v) {
         setErr(
-          "The review completed, but its verdict could not be read back yet. Validators may be busy — wait a moment and try Run review again."
+          "The review is still settling, or the node is busy. Wait a moment and click Refresh to load the verdict. Do not run the review again." +
+            (reviewError ? " (" + (reviewError?.message ?? String(reviewError)) + ")" : "")
         );
         setPhase(-1);
         setBusy(false);
@@ -135,13 +138,52 @@ export function ClaimActions({
     const held = verdict;
     setVerdict(null);
     try {
-      await settleClaim(claim.claim_id, held.case_id);
+      await settleClaim(claim.claim_id);
       onSettled();
     } catch (e: any) {
       setErr("Settlement failed: " + (e?.message ?? String(e)));
       setVerdict(held);
     } finally {
       setSettling(false);
+    }
+  }
+
+  async function doVerifyFix() {
+    setErr(null);
+    setVerifying(true);
+    try {
+      await verifyFix(claim.claim_id);
+      onSettled();
+    } catch (e: any) {
+      setErr("Verify fix failed: " + (e?.message ?? String(e)));
+    } finally {
+      setVerifying(false);
+    }
+  }
+
+  async function doReleaseEscrow() {
+    setErr(null);
+    setReleasing(true);
+    try {
+      await releaseEscrow(claim.claim_id);
+      onSettled();
+    } catch (e: any) {
+      setErr("Release escrow failed: " + (e?.message ?? String(e)));
+    } finally {
+      setReleasing(false);
+    }
+  }
+
+  async function doRefundEscrow() {
+    setErr(null);
+    setRefunding(true);
+    try {
+      await refundEscrow(claim.claim_id);
+      onSettled();
+    } catch (e: any) {
+      setErr("Refund escrow failed: " + (e?.message ?? String(e)));
+    } finally {
+      setRefunding(false);
     }
   }
 
@@ -158,13 +200,13 @@ export function ClaimActions({
     }
   }
 
-  if (claim.status !== "open") return null;
+  if (claim.status !== "open" && claim.status !== "held") return null;
 
   const idle = !verdict && phase < 0 && !settling && !dismissing;
 
   return (
     <div className="actions">
-      {idle && !confirmDismiss && (
+      {claim.status === "open" && idle && !confirmDismiss && (
         <div className="action-row">
           <button className="primary small" onClick={runReviewFlow} disabled={disabled || busy}>
             {busy ? "Reviewing…" : "Run review"}
@@ -179,7 +221,7 @@ export function ClaimActions({
         </div>
       )}
 
-      {confirmDismiss && idle && (
+      {claim.status === "open" && confirmDismiss && idle && (
         <div className="confirm-row">
           <span className="confirm-text mono">Dismiss this claim? No payout, closes it.</span>
           <button className="link" onClick={doDismiss} disabled={dismissing}>
@@ -191,23 +233,23 @@ export function ClaimActions({
         </div>
       )}
 
-      {dismissing && (
+      {claim.status === "open" && dismissing && (
         <div className="settling-panel mono">
           <span className="settling-dot" aria-hidden="true" />
           Dismissing claim on-chain…
         </div>
       )}
 
-      {phase >= 0 && <PhaseLadder active={phase} />}
+      {claim.status === "open" && phase >= 0 && <PhaseLadder active={phase} />}
 
-      {settling && (
+      {claim.status === "open" && settling && (
         <div className="settling-panel mono">
           <span className="settling-dot" aria-hidden="true" />
           Settling on-chain — the vault is reading the verdict from the verifier…
         </div>
       )}
 
-      {verdict && !settling && (
+      {claim.status === "open" && verdict && !settling && (
         <div className="verdict">
           <div className="verdict-head">
             <span className={"outcome outcome-" + verdict.outcome.toLowerCase()}>
@@ -265,6 +307,32 @@ export function ClaimActions({
             Settlement is permissionless — anyone can trigger it. The vault reads this
             verdict directly from the verifier; no human supplies the outcome or amounts.
           </div>
+        </div>
+      )}
+
+      {claim.status === "held" && (
+        <div className="action-row">
+          <button
+            className="primary small"
+            onClick={doVerifyFix}
+            disabled={disabled || verifying || releasing || refunding}
+          >
+            {verifying ? "Verifying fix…" : "Verify fix"}
+          </button>
+          <button
+            className="primary small"
+            onClick={doReleaseEscrow}
+            disabled={disabled || verifying || releasing || refunding}
+          >
+            {releasing ? "Releasing escrow…" : "Release escrow"}
+          </button>
+          <button
+            className="primary small"
+            onClick={doRefundEscrow}
+            disabled={disabled || verifying || releasing || refunding}
+          >
+            {refunding ? "Refunding escrow…" : "Refund escrow"}
+          </button>
         </div>
       )}
 

@@ -1,8 +1,8 @@
-﻿# Remedy
+# Remedy
 
 **Consensus security settlement on GenLayer.** Researchers file smart-contract vulnerability claims; GenLayer validators judge them by consensus, and a permissionless vault settles the bounty on the verdict alone. No committee, no relay, no trusted human in the loop.
 
-Live: [LIVE APP URL]
+Live: https://remedy-genlayer.vercel.app
 Network: GenLayer Studio (chainId 61999)
 
 ---
@@ -33,7 +33,7 @@ This is the core of Remedy. `settle_claim` on the vault is **permissionless**: a
 
 To prove there is no privileged relay, a wallet with no connection to the campaign settled a bounty on-chain. The vault derived the outcome and amounts from the verifier, not from the caller:
 
-Receipt: https://explorer-studio.genlayer.com/tx/0xabcc909ef7456054fd8fd477975a31564b24013205a5dac60be6ed39fec7ddfe
+Receipt: https://explorer-studio.genlayer.com/tx/0xee0e886feebf45b6de68f00bc18a6e10ade17d00a9a491bbdd77c64c3c32cb69
 
 ## Disagreement is signal
 
@@ -43,8 +43,8 @@ Every verdict carries a minority_note: the strongest dissenting view, produced b
 
 Two Python Intelligent Contracts on GenLayer Studio:
 
-- **Verifier** (`0x94e4535133e71d82C15A811070B34Cd72C505a97`) fetches the locked evidence with `gl.nondet.web.get` inside `gl.eq_principle.strict_eq`, reasons via `gl.eq_principle.prompt_non_comparative`, and returns a structured JSON verdict keyed by case_id. It produces verdicts only and never touches funds.
-- **Vault** (`0xF636CB3967DD998FF5f1Bd3ab3900933bF54AdC4`) embeds the GenUSDC settlement token, holds bounty pools, records campaigns and claims, and settles by reading the verifier directly. Privileged actions use the real transaction sender; there is no spoofable caller parameter. `mint` is owner-gated for demos; a public capped `faucet` grants each address a one-time 50000 test allowance.
+- **Verifier** (`0xF2daaB02ff5610Df6a62C006C4780d249e5416f6`) fetches the locked evidence with `gl.nondet.web.get` inside `gl.eq_principle.strict_eq`, reasons via `gl.eq_principle.prompt_non_comparative`, and returns a structured JSON verdict keyed by case_id. It produces verdicts only and never touches funds.
+- **Vault** (`0xe67763506a82e2c6F59A49f0a422f5964996140e`) embeds the GenUSDC settlement token, holds bounty pools, records campaigns and claims, and settles by reading the verifier directly. Privileged actions use the real transaction sender; there is no spoofable caller parameter. `mint` is owner-gated for demos; a public capped `faucet` grants each address a one-time 50000 test allowance.
 
 Frontend: React + TypeScript + Vite + genlayer-js, deployed on Vercel. Wallet support is MetaMask plus a demo burner fallback.
 
@@ -76,5 +76,5 @@ Then open the local URL. Use Demo mode for a throwaway wallet and click the fauc
 
 ## Links
 
-- Live app: [LIVE APP URL]
-- Settlement receipt: https://explorer-studio.genlayer.com/tx/0xabcc909ef7456054fd8fd477975a31564b24013205a5dac60be6ed39fec7ddfe
+- Live app: https://remedy-genlayer.vercel.app
+- Settlement receipt: https://explorer-studio.genlayer.com/tx/0xee0e886feebf45b6de68f00bc18a6e10ade17d00a9a491bbdd77c64c3c32cb69
