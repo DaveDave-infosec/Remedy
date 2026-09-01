@@ -3,6 +3,14 @@ from genlayer import *
 import json
 
 
+# V2: a campaign target must be a COMMIT-PINNED raw GitHub URL, so the reviewed
+# source cannot change under a claim. Held escrow cannot be reclaimed at will:
+# a failed fix must be proven by the verifier AND a grace window must elapse.
+REFUND_GRACE_SECONDS = 604800
+PIN_PREFIX = "https://raw.githubusercontent.com/"
+HEX_CHARS = "0123456789abcdef"
+
+
 class RemedyVault(gl.Contract):
     # --- config ---
     # owner exists ONLY to gate the testnet faucet (mint). It has NO power over
@@ -54,6 +62,7 @@ class RemedyVault(gl.Contract):
     cl_minority_note: TreeMap[str, str]
     cl_merged_with: TreeMap[str, str]
     cl_attribution_bps: TreeMap[str, u256]
+    cl_held_at: TreeMap[str, str]
 
     def __init__(self, owner_address: str, fee_wallet_address: str, protocol_fee_bps: int, verifier_address: str):
         self.owner = owner_address.lower()
@@ -115,6 +124,12 @@ class RemedyVault(gl.Contract):
         is_critical_target: bool,
     ) -> str:
         project = gl.message.sender_address.as_hex.lower()
+        if not self._is_commit_pinned(target_url):
+            raise gl.vm.UserError(
+                "target must be a commit-pinned raw GitHub URL of the form "
+                "https://raw.githubusercontent.com/<owner>/<repo>/<40-character "
+                "commit sha>/<path>; a branch URL can change after a claim is filed"
+            )
         amt = int(pool_amount)
         if amt <= 0:
             raise gl.vm.UserError("pool must be positive")
@@ -226,6 +241,50 @@ class RemedyVault(gl.Contract):
             return int(self.cam_pay_low[campaign_id])
         return 0
 
+    def _is_hex40(self, s: str) -> bool:
+        if len(s) != 40:
+            return False
+        low = s.lower()
+        for ch in low:
+            if ch not in HEX_CHARS:
+                return False
+        return True
+
+    def _is_commit_pinned(self, url: str) -> bool:
+        # https://raw.githubusercontent.com/<owner>/<repo>/<40-hex-commit>/<path>
+        if not url.startswith(PIN_PREFIX):
+            return False
+        rest = url[len(PIN_PREFIX):]
+        parts = rest.split("/")
+        if len(parts) < 4:
+            return False
+        if parts[0] == "" or parts[1] == "":
+            return False
+        path = "/".join(parts[3:])
+        if path == "":
+            return False
+        return self._is_hex40(parts[2])
+
+    def _days_from_civil(self, y: int, m: int, d: int) -> int:
+        if m <= 2:
+            y = y - 1
+        era = (y if y >= 0 else y - 399) // 400
+        yoe = y - era * 400
+        mp = m + (-3 if m > 2 else 9)
+        doy = (153 * mp + 2) // 5 + d - 1
+        doe = yoe * 365 + yoe // 4 - yoe // 100 + doy
+        return era * 146097 + doe - 719468
+
+    def _iso_to_epoch(self, s: str) -> int:
+        # message-envelope time: every validator reads the SAME value for a tx
+        y = int(s[0:4])
+        mo = int(s[5:7])
+        d = int(s[8:10])
+        h = int(s[11:13])
+        mi = int(s[14:16])
+        se = int(s[17:19])
+        return self._days_from_civil(y, mo, d) * 86400 + h * 3600 + mi * 60 + se
+
     # ---------- TRUSTLESS SETTLEMENT (permissionless; canonical verdict from verifier) ----------
     @gl.public.write
     def settle_claim(self, claim_id: str) -> str:
@@ -307,6 +366,7 @@ class RemedyVault(gl.Contract):
             self.cl_outcome[claim_id] = "HoldForPatch"
             self.cl_status[claim_id] = "held"
             self.cl_escrowed[claim_id] = u256(payout)
+            self.cl_held_at[claim_id] = str(gl.message_raw["datetime"])
             return "HoldForPatch"
 
         if outcome == "MergeDuplicate":
@@ -425,8 +485,25 @@ class RemedyVault(gl.Contract):
 
         vf = gl.get_contract_at(self.verifier)
         fix = vf.view().get_fix_result(claim_id)
-        if fix and "checked" in fix and bool(fix["checked"]) and bool(fix["fixed"]):
+        if not fix or "checked" not in fix:
+            raise gl.vm.UserError("verifier returned no fix result")
+        if not bool(fix["checked"]):
+            raise gl.vm.UserError(
+                "no patch verification yet; run verify_fix before any refund"
+            )
+        if bool(fix["fixed"]):
             raise gl.vm.UserError("fix is verified; escrow must be released to the submitter")
+        # V2: a failed fix is not enough on its own. The researcher gets a grace
+        # window from the moment the escrow began before the project may reclaim.
+        if claim_id not in self.cl_held_at:
+            raise gl.vm.UserError("escrow start time not recorded; refund refused")
+        held_at = self._iso_to_epoch(self.cl_held_at[claim_id])
+        now_at = self._iso_to_epoch(str(gl.message_raw["datetime"]))
+        if now_at - held_at < REFUND_GRACE_SECONDS:
+            raise gl.vm.UserError(
+                "the refund grace window has not elapsed; the escrow stays with the "
+                "claim until it does"
+            )
 
         escrowed = int(self.cl_escrowed[claim_id])
         self.cam_escrowed[campaign_id] = u256(int(self.cam_escrowed[campaign_id]) - escrowed)
@@ -464,6 +541,15 @@ class RemedyVault(gl.Contract):
             raise gl.vm.UserError("only the campaign project or the claim submitter can dismiss")
         if self.cl_status[claim_id] != "open":
             raise gl.vm.UserError("only open claims can be dismissed")
+        # V2: once consensus has issued a verdict for this claim, no party may
+        # dismiss it. The verdict must be settled, not discarded.
+        vf = gl.get_contract_at(self.verifier)
+        existing_case = str(vf.view().get_case_for_claim(claim_id))
+        if existing_case != "":
+            raise gl.vm.UserError(
+                "this claim already has a consensus verdict and cannot be dismissed; "
+                "it must be settled"
+            )
         self.cl_outcome[claim_id] = "Dismissed"
         self.cl_status[claim_id] = "dismissed"
         self.cl_payout[claim_id] = u256(0)
@@ -513,6 +599,7 @@ class RemedyVault(gl.Contract):
             "minority_note": self.cl_minority_note[claim_id],
             "merged_with": self.cl_merged_with[claim_id],
             "attribution_bps": int(self.cl_attribution_bps[claim_id]),
+            "held_at": self.cl_held_at[claim_id] if claim_id in self.cl_held_at else "",
         }
 
     @gl.public.view

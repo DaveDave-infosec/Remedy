@@ -1,6 +1,14 @@
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 from genlayer import *
 import json
+import hashlib
+
+# V2: the reviewed source must be a COMPLETE, IMMUTABLE artifact.
+# The campaign target is commit-pinned (enforced by the vault), the source is
+# never truncated (oversize is refused, not silently cut), and the sha256 of the
+# exact bytes judged is recorded on the verdict so drift is provable later.
+MAX_SOURCE_BYTES = 24000
+OVERSIZE_SENTINEL = "__REMEDY_SOURCE_OVERSIZE__"
 
 
 class RemedyVerifier(gl.Contract):
@@ -25,6 +33,7 @@ class RemedyVerifier(gl.Contract):
     v_duplicate_of_seq: TreeMap[str, u256]
     v_original_bps: TreeMap[str, u256]
     v_duplicate_bps: TreeMap[str, u256]
+    v_source_hash: TreeMap[str, str]
 
     # --- one authorized verdict per claim ---
     case_for_claim: TreeMap[str, str]
@@ -33,6 +42,7 @@ class RemedyVerifier(gl.Contract):
     fix_checked: TreeMap[str, bool]
     fix_verified: TreeMap[str, bool]
     fix_reasoning: TreeMap[str, str]
+    fix_source_hash: TreeMap[str, str]
 
     def __init__(self, owner_address: str):
         self.owner = owner_address.lower()
@@ -105,10 +115,19 @@ class RemedyVerifier(gl.Contract):
         def fetch_evidence() -> str:
             response = gl.nondet.web.get(local_url)
             body = response.body.decode("utf-8")
-            return body[:3000]
+            if len(body.encode("utf-8")) > MAX_SOURCE_BYTES:
+                return OVERSIZE_SENTINEL
+            return body
 
         evidence = gl.eq_principle.strict_eq(fetch_evidence)
+        if evidence == OVERSIZE_SENTINEL:
+            raise gl.vm.UserError(
+                "target source exceeds the reviewable size limit; the review is "
+                "refused rather than judging a partial file"
+            )
         local_evidence = evidence
+        # sha256 of the EXACT bytes consensus judged, recorded on the verdict
+        local_source_hash = hashlib.sha256(local_evidence.encode("utf-8")).hexdigest()
 
         def get_input() -> str:
             patch_section = local_patch
@@ -248,6 +267,7 @@ class RemedyVerifier(gl.Contract):
         self.v_duplicate_of_seq[case_id] = u256(stored_dup_seq)
         self.v_original_bps[case_id] = u256(original_bps if original_bps > 0 else 0)
         self.v_duplicate_bps[case_id] = u256(duplicate_bps if duplicate_bps > 0 else 0)
+        self.v_source_hash[case_id] = local_source_hash
 
         # lock this as the one authorized verdict for the claim
         self.case_for_claim[local_claim_id] = case_id
@@ -271,10 +291,18 @@ class RemedyVerifier(gl.Contract):
         def fetch_current() -> str:
             response = gl.nondet.web.get(local_url)
             body = response.body.decode("utf-8")
-            return body[:3000]
+            if len(body.encode("utf-8")) > MAX_SOURCE_BYTES:
+                return OVERSIZE_SENTINEL
+            return body
 
         current = gl.eq_principle.strict_eq(fetch_current)
+        if current == OVERSIZE_SENTINEL:
+            raise gl.vm.UserError(
+                "current source exceeds the reviewable size limit; the fix check is "
+                "refused rather than judging a partial file"
+            )
         local_current = current
+        local_fix_hash = hashlib.sha256(local_current.encode("utf-8")).hexdigest()
 
         def get_input() -> str:
             return (
@@ -316,6 +344,7 @@ class RemedyVerifier(gl.Contract):
         self.fix_checked[claim_id] = True
         self.fix_verified[claim_id] = fixed
         self.fix_reasoning[claim_id] = reasoning
+        self.fix_source_hash[claim_id] = local_fix_hash
         return fixed
 
     # ---------- views ----------
@@ -338,6 +367,7 @@ class RemedyVerifier(gl.Contract):
             "duplicate_of_seq": int(self.v_duplicate_of_seq[case_id]),
             "original_bps": int(self.v_original_bps[case_id]),
             "duplicate_bps": int(self.v_duplicate_bps[case_id]),
+            "source_hash": self.v_source_hash[case_id] if case_id in self.v_source_hash else "",
         }
 
     @gl.public.view
@@ -347,11 +377,12 @@ class RemedyVerifier(gl.Contract):
     @gl.public.view
     def get_fix_result(self, claim_id: str) -> dict:
         if claim_id not in self.fix_checked:
-            return {"checked": False, "fixed": False, "reasoning": ""}
+            return {"checked": False, "fixed": False, "reasoning": "", "source_hash": ""}
         return {
             "checked": True,
             "fixed": self.fix_verified[claim_id],
             "reasoning": self.fix_reasoning[claim_id],
+            "source_hash": self.fix_source_hash[claim_id] if claim_id in self.fix_source_hash else "",
         }
 
     @gl.public.view
