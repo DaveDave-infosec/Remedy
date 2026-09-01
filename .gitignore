@@ -21,3 +21,8 @@ frontend/dist/
 # vite
 .vite/
 frontend/.vite/
+
+__pycache__/
+*.pyc
+.pytest_cache/
+
