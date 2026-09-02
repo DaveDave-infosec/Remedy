@@ -85,3 +85,11 @@ def verdict(claim_id, target, outcome, severity, **over):
     }
     v.update(over)
     return v
+
+
+
+# distinct commit-pinned patched artifacts (different 40-hex SHAs than PINNED)
+PATCHED = ("https://raw.githubusercontent.com/DaveDave-infosec/Credence/"
+           "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678/CredencePayout.sol")
+PATCHED2 = ("https://raw.githubusercontent.com/DaveDave-infosec/Credence/"
+            "0011223344556677889900aabbccddeeff001122/CredencePayout.sol")

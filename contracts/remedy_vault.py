@@ -13,19 +13,14 @@ HEX_CHARS = "0123456789abcdef"
 
 class RemedyVault(gl.Contract):
     # --- config ---
-    # owner exists ONLY to gate the testnet faucet (mint). It has NO power over
-    # settlement: settle_claim is permissionless and reads verdicts from the
-    # verifier. In production the faucet would not exist at all.
     owner: str
     fee_wallet: str
     protocol_fee_bps: u256
     verifier: Address
 
-    # --- embedded settlement token (GenUSDC), whole units ---
     balances: TreeMap[str, u256]
     faucet_claimed: TreeMap[str, bool]
 
-    # --- campaigns ---
     campaign_ids: DynArray[str]
     campaign_counter: u256
     cam_project: TreeMap[str, str]
@@ -41,7 +36,6 @@ class RemedyVault(gl.Contract):
     cam_is_critical_target: TreeMap[str, bool]
     cam_claim_count: TreeMap[str, u256]
 
-    # --- claims, keyed by claim_id ---
     claim_ids: DynArray[str]
     claim_counter: u256
     cl_campaign: TreeMap[str, str]
@@ -63,6 +57,7 @@ class RemedyVault(gl.Contract):
     cl_merged_with: TreeMap[str, str]
     cl_attribution_bps: TreeMap[str, u256]
     cl_held_at: TreeMap[str, str]
+    cl_patched_url: TreeMap[str, str]
 
     def __init__(self, owner_address: str, fee_wallet_address: str, protocol_fee_bps: int, verifier_address: str):
         self.owner = owner_address.lower()
@@ -72,7 +67,6 @@ class RemedyVault(gl.Contract):
         self.campaign_counter = u256(0)
         self.claim_counter = u256(0)
 
-    # ---------- token: OWNER-GATED testnet faucet ----------
     @gl.public.write
     def mint(self, to_address: str, amount: int):
         sender = gl.message.sender_address.as_hex.lower()
@@ -82,7 +76,6 @@ class RemedyVault(gl.Contract):
         cur = self.balances[to_address] if to_address in self.balances else u256(0)
         self.balances[to_address] = u256(int(cur) + amount)
 
-    # ---------- public capped faucet: anyone, once, fixed grant ----------
     @gl.public.write
     def faucet(self):
         sender = gl.message.sender_address.as_hex.lower()
@@ -111,7 +104,6 @@ class RemedyVault(gl.Contract):
             "verifier": self.verifier.as_hex,
         }
 
-    # ---------- campaign lifecycle (permissionless; real sender is the project) ----------
     @gl.public.write
     def open_campaign(
         self,
@@ -156,7 +148,6 @@ class RemedyVault(gl.Contract):
         self.cam_claim_count[campaign_id] = u256(0)
         return campaign_id
 
-    # ---------- claim submission (real sender is the submitter; locked at intake) ----------
     @gl.public.write
     def submit_claim(
         self,
@@ -184,7 +175,6 @@ class RemedyVault(gl.Contract):
         self.cl_seq[claim_id] = u256(seq)
         self.cl_submitter[claim_id] = submitter
         self.cl_submitted_at[claim_id] = submitted_at
-        # target is fixed by the campaign; the claim inherits the campaign's locked target
         self.cl_target_url[claim_id] = self.cam_target_url[campaign_id]
         self.cl_poc_text[claim_id] = poc_text
         self.cl_patch_diff[claim_id] = patch_diff
@@ -199,9 +189,9 @@ class RemedyVault(gl.Contract):
         self.cl_minority_note[claim_id] = ""
         self.cl_merged_with[claim_id] = ""
         self.cl_attribution_bps[claim_id] = u256(0)
+        self.cl_patched_url[claim_id] = ""
         return claim_id
 
-    # ---------- priors reader (feeds the verifier's dedup step) ----------
     @gl.public.view
     def get_priors_json(self, campaign_id: str, exclude_claim_id: str) -> str:
         out = []
@@ -222,7 +212,6 @@ class RemedyVault(gl.Contract):
             })
         return json.dumps(out)
 
-    # ---------- helpers ----------
     def _find_claim_by_seq(self, campaign_id: str, seq: int) -> str:
         for i in range(len(self.claim_ids)):
             cid = self.claim_ids[i]
@@ -251,7 +240,6 @@ class RemedyVault(gl.Contract):
         return True
 
     def _is_commit_pinned(self, url: str) -> bool:
-        # https://raw.githubusercontent.com/<owner>/<repo>/<40-hex-commit>/<path>
         if not url.startswith(PIN_PREFIX):
             return False
         rest = url[len(PIN_PREFIX):]
@@ -276,7 +264,6 @@ class RemedyVault(gl.Contract):
         return era * 146097 + doe - 719468
 
     def _iso_to_epoch(self, s: str) -> int:
-        # message-envelope time: every validator reads the SAME value for a tx
         y = int(s[0:4])
         mo = int(s[5:7])
         d = int(s[8:10])
@@ -285,7 +272,6 @@ class RemedyVault(gl.Contract):
         se = int(s[17:19])
         return self._days_from_civil(y, mo, d) * 86400 + h * 3600 + mi * 60 + se
 
-    # ---------- TRUSTLESS SETTLEMENT (permissionless; canonical verdict from verifier) ----------
     @gl.public.write
     def settle_claim(self, claim_id: str) -> str:
         if claim_id not in self.cl_status:
@@ -296,7 +282,6 @@ class RemedyVault(gl.Contract):
         if self.cam_status[campaign_id] == "paused":
             raise gl.vm.UserError("campaign paused; no further settlement")
 
-        # derive the ONE authorized verdict for this claim from the verifier
         vf = gl.get_contract_at(self.verifier)
         case_id = str(vf.view().get_case_for_claim(claim_id))
         if case_id == "":
@@ -305,7 +290,6 @@ class RemedyVault(gl.Contract):
         if not v or "outcome" not in v:
             raise gl.vm.UserError("verdict not found on verifier")
 
-        # bind the verdict to THIS claim and its locked target
         if str(v["claim_id"]) != claim_id:
             raise gl.vm.UserError("verdict is for a different claim")
         if str(v["target_url"]) != self.cl_target_url[claim_id]:
@@ -324,8 +308,6 @@ class RemedyVault(gl.Contract):
         pool = int(self.cam_pool[campaign_id])
         fee_bps = int(self.protocol_fee_bps)
 
-        # AUTHORITATIVE payout: recomputed from this campaign's own on-chain schedule
-        # for the severity consensus assigned. The verifier's payout number is never trusted.
         payout = self._payout_for(campaign_id, severity)
 
         if outcome == "Reject":
@@ -389,7 +371,6 @@ class RemedyVault(gl.Contract):
             orig_net = orig_gross - orig_fee
             dup_net = dup_gross - dup_fee
 
-            # always pay the later duplicate its share
             dup_sub = self.cl_submitter[claim_id]
             dbal = int(self.balances[dup_sub]) if dup_sub in self.balances else 0
             self.balances[dup_sub] = u256(dbal + dup_net)
@@ -397,8 +378,6 @@ class RemedyVault(gl.Contract):
             distributed_fee = dup_fee
             pool_spent = dup_gross
 
-            # pay the FIRST reporter their share ONLY if their claim is still open
-            # (never pay an already-resolved original a second time)
             original_open = self.cl_status[original_claim_id] == "open"
             if original_open:
                 orig_sub = self.cl_submitter[original_claim_id]
@@ -431,8 +410,34 @@ class RemedyVault(gl.Contract):
 
         raise gl.vm.UserError("unknown outcome from verifier")
 
+    # ---------- HoldForPatch: submit a NEW commit-pinned patched artifact ----------
+    # The fix is its own evidence. Only the submitter or the project may propose it,
+    # and it must be commit-pinned exactly like a campaign target. Proposing a new
+    # artifact replaces the pointer; each artifact is judged once by the verifier.
+    @gl.public.write
+    def submit_fix(self, claim_id: str, patched_url: str) -> str:
+        if claim_id not in self.cl_status:
+            raise gl.vm.UserError("unknown claim")
+        if self.cl_status[claim_id] != "held":
+            raise gl.vm.UserError("claim is not held for patch")
+        campaign_id = self.cl_campaign[claim_id]
+        project = self.cam_project[campaign_id]
+        submitter = self.cl_submitter[claim_id]
+        sender = gl.message.sender_address.as_hex.lower()
+        if sender != project and sender != submitter:
+            raise gl.vm.UserError("only the claim submitter or the campaign project may submit a fix")
+        if not self._is_commit_pinned(patched_url):
+            raise gl.vm.UserError(
+                "the patched artifact must be a commit-pinned raw GitHub URL of the "
+                "form https://raw.githubusercontent.com/<owner>/<repo>/<40-character "
+                "commit sha>/<path>"
+            )
+        self.cl_patched_url[claim_id] = patched_url
+        return "fix submitted"
+
     # ---------- HoldForPatch completion: release escrow once the fix is verified ----------
-    # Permissionless: pays only if the verifier's re-review confirms the fix. No discretion.
+    # Permissionless: pays only if the verifier's re-review of the SUBMITTED artifact
+    # confirms the fix. No discretion.
     @gl.public.write
     def release_escrow(self, claim_id: str) -> str:
         if claim_id not in self.cl_status:
@@ -441,14 +446,17 @@ class RemedyVault(gl.Contract):
             raise gl.vm.UserError("claim is not held for patch")
         campaign_id = self.cl_campaign[claim_id]
 
+        patched_url = self.cl_patched_url[claim_id] if claim_id in self.cl_patched_url else ""
+        if patched_url == "":
+            raise gl.vm.UserError("no patched artifact submitted; run submit_fix first")
         vf = gl.get_contract_at(self.verifier)
-        fix = vf.view().get_fix_result(claim_id)
+        fix = vf.view().get_fix_result(patched_url)
         if not fix or "checked" not in fix:
             raise gl.vm.UserError("verifier returned no fix result")
         if not bool(fix["checked"]):
-            raise gl.vm.UserError("no patch verification yet; run verify_fix first")
+            raise gl.vm.UserError("this patched artifact has no fix verdict yet; run verify_fix first")
         if not bool(fix["fixed"]):
-            raise gl.vm.UserError("fix not verified; escrow not releasable")
+            raise gl.vm.UserError("submitted fix not verified; escrow not releasable")
 
         escrowed = int(self.cl_escrowed[claim_id])
         fee_bps = int(self.protocol_fee_bps)
@@ -469,8 +477,8 @@ class RemedyVault(gl.Contract):
         return "released"
 
     # ---------- HoldForPatch completion: refund stuck escrow to the pool ----------
-    # Project-gated, and ONLY while the fix is unverified (a verified fix must be
-    # released to the submitter, never refunded away from them).
+    # Project-gated, and blocked if the submitted artifact is verified-fixed (that must
+    # be released to the submitter). Otherwise allowed only after the grace window.
     @gl.public.write
     def refund_escrow(self, claim_id: str) -> str:
         if claim_id not in self.cl_status:
@@ -483,18 +491,13 @@ class RemedyVault(gl.Contract):
         if sender != project:
             raise gl.vm.UserError("only the campaign project may refund escrow")
 
-        vf = gl.get_contract_at(self.verifier)
-        fix = vf.view().get_fix_result(claim_id)
-        if not fix or "checked" not in fix:
-            raise gl.vm.UserError("verifier returned no fix result")
-        if not bool(fix["checked"]):
-            raise gl.vm.UserError(
-                "no patch verification yet; run verify_fix before any refund"
-            )
-        if bool(fix["fixed"]):
-            raise gl.vm.UserError("fix is verified; escrow must be released to the submitter")
-        # V2: a failed fix is not enough on its own. The researcher gets a grace
-        # window from the moment the escrow began before the project may reclaim.
+        patched_url = self.cl_patched_url[claim_id] if claim_id in self.cl_patched_url else ""
+        if patched_url != "":
+            vf = gl.get_contract_at(self.verifier)
+            fix = vf.view().get_fix_result(patched_url)
+            if fix and "checked" in fix and bool(fix["checked"]) and bool(fix["fixed"]):
+                raise gl.vm.UserError("fix is verified; escrow must be released to the submitter")
+
         if claim_id not in self.cl_held_at:
             raise gl.vm.UserError("escrow start time not recorded; refund refused")
         held_at = self._iso_to_epoch(self.cl_held_at[claim_id])
@@ -514,7 +517,6 @@ class RemedyVault(gl.Contract):
         self.cl_status[claim_id] = "rejected"
         return "refunded"
 
-    # ---------- Escalate completion: project resumes a paused campaign ----------
     @gl.public.write
     def resume_campaign(self, campaign_id: str) -> str:
         if campaign_id not in self.cam_status:
@@ -528,7 +530,6 @@ class RemedyVault(gl.Contract):
         self.cam_status[campaign_id] = "active"
         return "resumed"
 
-    # ---------- claim dismissal (real sender; project or submitter; no payout) ----------
     @gl.public.write
     def dismiss_claim(self, claim_id: str):
         if claim_id not in self.cl_status:
@@ -541,8 +542,6 @@ class RemedyVault(gl.Contract):
             raise gl.vm.UserError("only the campaign project or the claim submitter can dismiss")
         if self.cl_status[claim_id] != "open":
             raise gl.vm.UserError("only open claims can be dismissed")
-        # V2: once consensus has issued a verdict for this claim, no party may
-        # dismiss it. The verdict must be settled, not discarded.
         vf = gl.get_contract_at(self.verifier)
         existing_case = str(vf.view().get_case_for_claim(claim_id))
         if existing_case != "":
@@ -554,7 +553,6 @@ class RemedyVault(gl.Contract):
         self.cl_status[claim_id] = "dismissed"
         self.cl_payout[claim_id] = u256(0)
 
-    # ---------- views ----------
     @gl.public.view
     def get_campaign(self, campaign_id: str) -> dict:
         if campaign_id not in self.cam_status:
@@ -600,6 +598,7 @@ class RemedyVault(gl.Contract):
             "merged_with": self.cl_merged_with[claim_id],
             "attribution_bps": int(self.cl_attribution_bps[claim_id]),
             "held_at": self.cl_held_at[claim_id] if claim_id in self.cl_held_at else "",
+            "patched_url": self.cl_patched_url[claim_id] if claim_id in self.cl_patched_url else "",
         }
 
     @gl.public.view

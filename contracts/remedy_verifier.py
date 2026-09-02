@@ -38,7 +38,7 @@ class RemedyVerifier(gl.Contract):
     # --- one authorized verdict per claim ---
     case_for_claim: TreeMap[str, str]
 
-    # --- patch re-verification results (for HoldForPatch escrow release) ---
+    # --- patch re-verification, keyed by the PATCHED ARTIFACT url (write-once) ---
     fix_checked: TreeMap[str, bool]
     fix_verified: TreeMap[str, bool]
     fix_reasoning: TreeMap[str, str]
@@ -79,7 +79,6 @@ class RemedyVerifier(gl.Contract):
 
         case_id = "remedy_" + str(int(self.verdict_counter))
 
-        # canonical inputs, read from the vault (never from the caller)
         local_claim_id = claim_id
         local_url = str(claim["target_url"])
         local_poc = str(claim["poc_text"])
@@ -93,7 +92,6 @@ class RemedyVerifier(gl.Contract):
 
         prior_claims_json = vf.view().get_priors_json(campaign_id, claim_id)
 
-        # build a readable priors block (deterministic)
         priors_text = "(none)"
         try:
             priors = json.loads(prior_claims_json)
@@ -126,7 +124,6 @@ class RemedyVerifier(gl.Contract):
                 "refused rather than judging a partial file"
             )
         local_evidence = evidence
-        # sha256 of the EXACT bytes consensus judged, recorded on the verdict
         local_source_hash = hashlib.sha256(local_evidence.encode("utf-8")).hexdigest()
 
         def get_input() -> str:
@@ -269,12 +266,15 @@ class RemedyVerifier(gl.Contract):
         self.v_duplicate_bps[case_id] = u256(duplicate_bps if duplicate_bps > 0 else 0)
         self.v_source_hash[case_id] = local_source_hash
 
-        # lock this as the one authorized verdict for the claim
         self.case_for_claim[local_claim_id] = case_id
 
         return case_id
 
-    # ---------- patch re-verification (for HoldForPatch escrow release) ----------
+    # ---------- patch re-verification: judge a SUBMITTED patched artifact ----------
+    # V2 patch flow: judge the claim's SUBMITTED patched artifact (a NEW
+    # commit-pinned URL, read canonically from the vault), NOT the unchanged
+    # original. One immutable verdict per artifact: the same patched URL can
+    # never be re-judged; a genuinely different artifact gets a fresh verdict.
     @gl.public.write
     def verify_fix(self, claim_id: str) -> bool:
         if not self.vault_set:
@@ -285,49 +285,55 @@ class RemedyVerifier(gl.Contract):
         if not claim or "target_url" not in claim:
             raise gl.vm.UserError("unknown claim")
 
-        local_url = str(claim["target_url"])
-        local_poc = str(claim["poc_text"])
+        patched_url = str(claim["patched_url"]) if "patched_url" in claim else ""
+        if patched_url == "":
+            raise gl.vm.UserError("no patched artifact submitted for this claim")
+        if patched_url in self.fix_checked and self.fix_checked[patched_url]:
+            raise gl.vm.UserError("this patched artifact already has a fix verdict")
 
-        def fetch_current() -> str:
+        local_poc = str(claim["poc_text"])
+        local_url = patched_url
+
+        def fetch_patched() -> str:
             response = gl.nondet.web.get(local_url)
             body = response.body.decode("utf-8")
             if len(body.encode("utf-8")) > MAX_SOURCE_BYTES:
                 return OVERSIZE_SENTINEL
             return body
 
-        current = gl.eq_principle.strict_eq(fetch_current)
-        if current == OVERSIZE_SENTINEL:
+        patched = gl.eq_principle.strict_eq(fetch_patched)
+        if patched == OVERSIZE_SENTINEL:
             raise gl.vm.UserError(
-                "current source exceeds the reviewable size limit; the fix check is "
+                "patched artifact exceeds the reviewable size limit; the fix check is "
                 "refused rather than judging a partial file"
             )
-        local_current = current
-        local_fix_hash = hashlib.sha256(local_current.encode("utf-8")).hexdigest()
+        local_patched = patched
+        local_fix_hash = hashlib.sha256(local_patched.encode("utf-8")).hexdigest()
 
         def get_input() -> str:
             return (
                 "ORIGINAL VULNERABILITY (previously reported and accepted):\n"
                 + local_poc
-                + "\n\nCURRENT TARGET CONTRACT SOURCE (re-fetched now from "
-                + local_url + "):\n"
-                + local_current
+                + "\n\nPROPOSED PATCHED CONTRACT SOURCE (a new commit-pinned artifact, "
+                "fetched from " + local_url + "):\n"
+                + local_patched
             )
 
         task = (
             "You are verifying whether a previously accepted smart-contract "
-            "vulnerability has now been FIXED in the current source. You are given "
-            "the ORIGINAL VULNERABILITY description and the CURRENT source re-fetched "
-            "from the locked target. Judge ONLY from the static code. Decide whether "
-            "the specific flaw described is now genuinely closed in the current "
-            "source (a proper check added, ordering corrected, a guard in place, "
-            "and so on). Do NOT accept a cosmetic or unrelated change as a fix. "
-            "Return ONLY one JSON object with keys: fixed (boolean; true only if the "
-            "original flaw is genuinely closed in the current source), reasoning "
-            "(1-2 sentences grounded in the actual current code)."
+            "vulnerability has been FIXED in a PROPOSED PATCHED source. You are given "
+            "the ORIGINAL VULNERABILITY description and the PATCHED source fetched from "
+            "a new commit-pinned artifact. Judge ONLY from the static code. Decide "
+            "whether the specific flaw described is now genuinely closed in the patched "
+            "source (a proper check added, ordering corrected, a guard in place, and so "
+            "on). Do NOT accept a cosmetic or unrelated change as a fix. Return ONLY one "
+            "JSON object with keys: fixed (boolean; true only if the original flaw is "
+            "genuinely closed in the patched source), reasoning (1-2 sentences grounded "
+            "in the actual patched code)."
         )
         criteria_check = (
             "The response is exactly one valid JSON object with a boolean 'fixed' "
-            "and a non-empty 'reasoning' grounded in the current source. 'fixed' is "
+            "and a non-empty 'reasoning' grounded in the patched source. 'fixed' is "
             "true only when the specific original flaw is genuinely closed."
         )
 
@@ -341,10 +347,10 @@ class RemedyVerifier(gl.Contract):
         fixed = bool(parsed["fixed"])
         reasoning = str(parsed["reasoning"])
 
-        self.fix_checked[claim_id] = True
-        self.fix_verified[claim_id] = fixed
-        self.fix_reasoning[claim_id] = reasoning
-        self.fix_source_hash[claim_id] = local_fix_hash
+        self.fix_checked[patched_url] = True
+        self.fix_verified[patched_url] = fixed
+        self.fix_reasoning[patched_url] = reasoning
+        self.fix_source_hash[patched_url] = local_fix_hash
         return fixed
 
     # ---------- views ----------
@@ -375,14 +381,14 @@ class RemedyVerifier(gl.Contract):
         return self.case_for_claim[claim_id] if claim_id in self.case_for_claim else ""
 
     @gl.public.view
-    def get_fix_result(self, claim_id: str) -> dict:
-        if claim_id not in self.fix_checked:
+    def get_fix_result(self, patched_url: str) -> dict:
+        if patched_url not in self.fix_checked:
             return {"checked": False, "fixed": False, "reasoning": "", "source_hash": ""}
         return {
             "checked": True,
-            "fixed": self.fix_verified[claim_id],
-            "reasoning": self.fix_reasoning[claim_id],
-            "source_hash": self.fix_source_hash[claim_id] if claim_id in self.fix_source_hash else "",
+            "fixed": self.fix_verified[patched_url],
+            "reasoning": self.fix_reasoning[patched_url],
+            "source_hash": self.fix_source_hash[patched_url] if patched_url in self.fix_source_hash else "",
         }
 
     @gl.public.view
