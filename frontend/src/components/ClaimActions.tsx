@@ -4,6 +4,7 @@ import {
   getVerdict,
   settleClaim,
   dismissClaim,
+  submitFix,
   verifyFix,
   releaseEscrow,
   refundEscrow,
@@ -67,7 +68,27 @@ export function ClaimActions({
   const [verifying, setVerifying] = useState(false);
   const [releasing, setReleasing] = useState(false);
   const [refunding, setRefunding] = useState(false);
+  const [submittingFix, setSubmittingFix] = useState(false);
+  const [patchedUrl, setPatchedUrl] = useState("");
   const [confirmDismiss, setConfirmDismiss] = useState(false);
+
+  async function doSubmitFix() {
+    setErr(null);
+    if (patchedUrl.trim() === "") {
+      setErr("Paste a commit-pinned raw GitHub URL of the patched contract first.");
+      return;
+    }
+    setSubmittingFix(true);
+    try {
+      await submitFix(claim.claim_id, patchedUrl.trim());
+      setPatchedUrl("");
+      onSettled();
+    } catch (e: any) {
+      setErr("Submit fix failed: " + (e?.message ?? String(e)));
+    } finally {
+      setSubmittingFix(false);
+    }
+  }
   const [err, setErr] = useState<string | null>(null);
 
   async function runReviewFlow() {
@@ -203,6 +224,7 @@ export function ClaimActions({
   if (claim.status !== "open" && claim.status !== "held") return null;
 
   const idle = !verdict && phase < 0 && !settling && !dismissing;
+  const heldBusy = submittingFix || verifying || releasing || refunding;
 
   return (
     <div className="actions">
@@ -311,28 +333,57 @@ export function ClaimActions({
       )}
 
       {claim.status === "held" && (
-        <div className="action-row">
-          <button
-            className="primary small"
-            onClick={doVerifyFix}
-            disabled={disabled || verifying || releasing || refunding}
-          >
-            {verifying ? "Verifying fix…" : "Verify fix"}
-          </button>
-          <button
-            className="primary small"
-            onClick={doReleaseEscrow}
-            disabled={disabled || verifying || releasing || refunding}
-          >
-            {releasing ? "Releasing escrow…" : "Release escrow"}
-          </button>
-          <button
-            className="primary small"
-            onClick={doRefundEscrow}
-            disabled={disabled || verifying || releasing || refunding}
-          >
-            {refunding ? "Refunding escrow…" : "Refund escrow"}
-          </button>
+        <div className="held-actions">
+          {(claim as any).patched_url ? (
+            <div className="fix-current mono">
+              patched artifact: {(claim as any).patched_url}
+            </div>
+          ) : (
+            <div className="fix-current mono">
+              No patched artifact submitted yet. Paste a NEW commit-pinned URL of the
+              fixed contract, then Verify fix judges that artifact.
+            </div>
+          )}
+          <div className="fix-submit-row">
+            <input
+              className="fix-url-input mono"
+              type="text"
+              value={patchedUrl}
+              placeholder="https://raw.githubusercontent.com/<owner>/<repo>/<40-char commit sha>/<path>"
+              onChange={(e) => setPatchedUrl(e.target.value)}
+              disabled={disabled || heldBusy}
+            />
+            <button
+              className="primary small"
+              onClick={doSubmitFix}
+              disabled={disabled || heldBusy}
+            >
+              {submittingFix ? "Submitting…" : "Submit fix"}
+            </button>
+          </div>
+          <div className="action-row">
+            <button
+              className="primary small"
+              onClick={doVerifyFix}
+              disabled={disabled || heldBusy}
+            >
+              {verifying ? "Verifying fix…" : "Verify fix"}
+            </button>
+            <button
+              className="primary small"
+              onClick={doReleaseEscrow}
+              disabled={disabled || heldBusy}
+            >
+              {releasing ? "Releasing escrow…" : "Release escrow"}
+            </button>
+            <button
+              className="primary small"
+              onClick={doRefundEscrow}
+              disabled={disabled || heldBusy}
+            >
+              {refunding ? "Refunding escrow…" : "Refund escrow"}
+            </button>
+          </div>
         </div>
       )}
 
