@@ -6,9 +6,15 @@ import json
 # V2: a campaign target must be a COMMIT-PINNED raw GitHub URL, so the reviewed
 # source cannot change under a claim. Held escrow cannot be reclaimed at will:
 # a failed fix must be proven by the verifier AND a grace window must elapse.
+# V3 (pillar 1): a campaign targets a SET of commit-pinned contracts (up to
+# MAX_TARGETS). A claim names WHICH target by index; the vault resolves the URL
+# canonically, so the caller never supplies a URL. Duplicate detection is scoped
+# PER TARGET: two claims on different contracts of the same campaign are never
+# duplicates of each other.
 REFUND_GRACE_SECONDS = 604800
 PIN_PREFIX = "https://raw.githubusercontent.com/"
 HEX_CHARS = "0123456789abcdef"
+MAX_TARGETS = 10
 
 
 class RemedyVault(gl.Contract):
@@ -24,7 +30,8 @@ class RemedyVault(gl.Contract):
     campaign_ids: DynArray[str]
     campaign_counter: u256
     cam_project: TreeMap[str, str]
-    cam_target_url: TreeMap[str, str]
+    cam_target_count: TreeMap[str, u256]
+    cam_target_at: TreeMap[str, str]
     cam_pool: TreeMap[str, u256]
     cam_escrowed: TreeMap[str, u256]
     cam_paid_total: TreeMap[str, u256]
@@ -43,6 +50,7 @@ class RemedyVault(gl.Contract):
     cl_submitter: TreeMap[str, str]
     cl_submitted_at: TreeMap[str, str]
     cl_target_url: TreeMap[str, str]
+    cl_target_index: TreeMap[str, u256]
     cl_poc_text: TreeMap[str, str]
     cl_patch_diff: TreeMap[str, str]
     cl_claimed_severity: TreeMap[str, str]
@@ -107,7 +115,7 @@ class RemedyVault(gl.Contract):
     @gl.public.write
     def open_campaign(
         self,
-        target_url: str,
+        target_urls: list,
         pool_amount: int,
         pay_critical: int,
         pay_high: int,
@@ -116,12 +124,27 @@ class RemedyVault(gl.Contract):
         is_critical_target: bool,
     ) -> str:
         project = gl.message.sender_address.as_hex.lower()
-        if not self._is_commit_pinned(target_url):
+
+        n = len(target_urls)
+        if n < 1:
+            raise gl.vm.UserError("a campaign must name at least one target")
+        if n > MAX_TARGETS:
             raise gl.vm.UserError(
-                "target must be a commit-pinned raw GitHub URL of the form "
-                "https://raw.githubusercontent.com/<owner>/<repo>/<40-character "
-                "commit sha>/<path>; a branch URL can change after a claim is filed"
+                "a campaign may name at most " + str(MAX_TARGETS) + " targets"
             )
+        seen = []
+        for i in range(n):
+            u = str(target_urls[i])
+            if not self._is_commit_pinned(u):
+                raise gl.vm.UserError(
+                    "every target must be a commit-pinned raw GitHub URL of the form "
+                    "https://raw.githubusercontent.com/<owner>/<repo>/<40-character "
+                    "commit sha>/<path>; a branch URL can change after a claim is filed"
+                )
+            if u in seen:
+                raise gl.vm.UserError("duplicate target URL in the campaign target set")
+            seen.append(u)
+
         amt = int(pool_amount)
         if amt <= 0:
             raise gl.vm.UserError("pool must be positive")
@@ -135,7 +158,9 @@ class RemedyVault(gl.Contract):
 
         self.balances[project] = u256(bal - amt)
         self.cam_project[campaign_id] = project
-        self.cam_target_url[campaign_id] = target_url
+        self.cam_target_count[campaign_id] = u256(n)
+        for i in range(n):
+            self.cam_target_at[campaign_id + "#" + str(i)] = str(target_urls[i])
         self.cam_pool[campaign_id] = u256(amt)
         self.cam_escrowed[campaign_id] = u256(0)
         self.cam_paid_total[campaign_id] = u256(0)
@@ -153,7 +178,7 @@ class RemedyVault(gl.Contract):
         self,
         campaign_id: str,
         submitted_at: str,
-        target_url: str,
+        target_index: int,
         poc_text: str,
         patch_diff: str,
         claimed_severity: str,
@@ -162,6 +187,15 @@ class RemedyVault(gl.Contract):
             raise gl.vm.UserError("unknown campaign")
         if self.cam_status[campaign_id] != "active":
             raise gl.vm.UserError("campaign not active")
+
+        count = int(self.cam_target_count[campaign_id])
+        idx = int(target_index)
+        if idx < 0 or idx >= count:
+            raise gl.vm.UserError(
+                "target_index out of range; this campaign has "
+                + str(count) + " target(s), valid indices 0 to " + str(count - 1)
+            )
+        resolved_url = self.cam_target_at[campaign_id + "#" + str(idx)]
 
         submitter = gl.message.sender_address.as_hex.lower()
         claim_id = "clm_" + str(int(self.claim_counter))
@@ -175,7 +209,8 @@ class RemedyVault(gl.Contract):
         self.cl_seq[claim_id] = u256(seq)
         self.cl_submitter[claim_id] = submitter
         self.cl_submitted_at[claim_id] = submitted_at
-        self.cl_target_url[claim_id] = self.cam_target_url[campaign_id]
+        self.cl_target_url[claim_id] = resolved_url
+        self.cl_target_index[claim_id] = u256(idx)
         self.cl_poc_text[claim_id] = poc_text
         self.cl_patch_diff[claim_id] = patch_diff
         self.cl_claimed_severity[claim_id] = claimed_severity
@@ -194,6 +229,12 @@ class RemedyVault(gl.Contract):
 
     @gl.public.view
     def get_priors_json(self, campaign_id: str, exclude_claim_id: str) -> str:
+        # Per-target dedup scope: only priors filed against the SAME target index
+        # as the excluded claim are returned, so the verifier never treats claims
+        # on different contracts of the same campaign as duplicates.
+        target_idx = -1
+        if exclude_claim_id in self.cl_target_index:
+            target_idx = int(self.cl_target_index[exclude_claim_id])
         out = []
         for i in range(len(self.claim_ids)):
             cid = self.claim_ids[i]
@@ -201,6 +242,11 @@ class RemedyVault(gl.Contract):
                 continue
             if cid == exclude_claim_id:
                 continue
+            if target_idx >= 0:
+                if cid not in self.cl_target_index:
+                    continue
+                if int(self.cl_target_index[cid]) != target_idx:
+                    continue
             st = self.cl_status[cid]
             if st != "open" and st != "rewarded" and st != "held":
                 continue
@@ -410,10 +456,6 @@ class RemedyVault(gl.Contract):
 
         raise gl.vm.UserError("unknown outcome from verifier")
 
-    # ---------- HoldForPatch: submit a NEW commit-pinned patched artifact ----------
-    # The fix is its own evidence. Only the submitter or the project may propose it,
-    # and it must be commit-pinned exactly like a campaign target. Proposing a new
-    # artifact replaces the pointer; each artifact is judged once by the verifier.
     @gl.public.write
     def submit_fix(self, claim_id: str, patched_url: str) -> str:
         if claim_id not in self.cl_status:
@@ -435,9 +477,6 @@ class RemedyVault(gl.Contract):
         self.cl_patched_url[claim_id] = patched_url
         return "fix submitted"
 
-    # ---------- HoldForPatch completion: release escrow once the fix is verified ----------
-    # Permissionless: pays only if the verifier's re-review of the SUBMITTED artifact
-    # confirms the fix. No discretion.
     @gl.public.write
     def release_escrow(self, claim_id: str) -> str:
         if claim_id not in self.cl_status:
@@ -476,9 +515,6 @@ class RemedyVault(gl.Contract):
         self.cl_status[claim_id] = "rewarded"
         return "released"
 
-    # ---------- HoldForPatch completion: refund stuck escrow to the pool ----------
-    # Project-gated, and blocked if the submitted artifact is verified-fixed (that must
-    # be released to the submitter). Otherwise allowed only after the grace window.
     @gl.public.write
     def refund_escrow(self, claim_id: str) -> str:
         if claim_id not in self.cl_status:
@@ -557,10 +593,15 @@ class RemedyVault(gl.Contract):
     def get_campaign(self, campaign_id: str) -> dict:
         if campaign_id not in self.cam_status:
             return {}
+        targets = []
+        count = int(self.cam_target_count[campaign_id])
+        for i in range(count):
+            targets.append(self.cam_target_at[campaign_id + "#" + str(i)])
         return {
             "campaign_id": campaign_id,
             "project": self.cam_project[campaign_id],
-            "target_url": self.cam_target_url[campaign_id],
+            "targets": targets,
+            "target_count": count,
             "pool": int(self.cam_pool[campaign_id]),
             "escrowed": int(self.cam_escrowed[campaign_id]),
             "paid_total": int(self.cam_paid_total[campaign_id]),
@@ -584,6 +625,7 @@ class RemedyVault(gl.Contract):
             "submitter": self.cl_submitter[claim_id],
             "submitted_at": self.cl_submitted_at[claim_id],
             "target_url": self.cl_target_url[claim_id],
+            "target_index": int(self.cl_target_index[claim_id]) if claim_id in self.cl_target_index else 0,
             "poc_text": self.cl_poc_text[claim_id],
             "patch_diff": self.cl_patch_diff[claim_id],
             "claimed_severity": self.cl_claimed_severity[claim_id],

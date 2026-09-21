@@ -49,7 +49,6 @@ export function ClaimActions({
   claim: Claim;
   campaign: {
     campaign_id: string;
-    target_url: string;
     pay_critical: number;
     pay_high: number;
     pay_medium: number;

@@ -8,10 +8,10 @@ def test_permissionless_bystander_settle_reward(direct_vm, direct_deploy):
 
     direct_vm.sender = S(C.PROJECT)
     vault.faucet()
-    vault.open_campaign(C.PINNED, 20000, 10000, 5000, 2000, 500, False)
+    vault.open_campaign([C.PINNED], 20000, 10000, 5000, 2000, 500, False)
 
     direct_vm.sender = S(C.HUNTER)
-    vault.submit_claim("cam_0", "2026-01-01T00:00:00Z", C.PINNED, "unchecked call", "", "High")
+    vault.submit_claim("cam_0", "2026-01-01T00:00:00Z", 0, "unchecked call", "", "High")
 
     # the verifier says High Reward; verdict.payout is absurd on purpose
     direct_vm._gl_call_hook = C.make_hook({

@@ -8,7 +8,8 @@ import { DisclosureTimeline } from "./DisclosureTimeline";
 type Campaign = {
   campaign_id: string;
   project: string;
-  target_url: string;
+  targets: string[];
+  target_count: number;
   pool: number;
   escrowed: number;
   paid_total: number;
@@ -33,6 +34,7 @@ type Claim = {
   payout: number;
   escrowed: number;
   target_url: string;
+  target_index: number;
   poc_text: string;
   patch_diff: string;
   reasoning: string;
@@ -131,6 +133,7 @@ export function CampaignDetail({
           <div className="claimrow-top">
             <span className="mono claim-id">{cl.claim_id}</span>
             <span className="seq mono">seq {cl.seq}</span>
+            <span className="seq mono">target #{cl.target_index ?? 0}</span>
             {cl.outcome === "MergeDuplicate" ? (
               <span className="status status-merged">merged</span>
             ) : cl.status === "dismissed" ? (
@@ -212,7 +215,11 @@ export function CampaignDetail({
             <span className={"status status-" + cam.status}>{cam.status}</span>
             {cam.is_critical_target && <span className="crit-flag">critical target</span>}
           </div>
-          <div className="detail-url mono">{cam.target_url}</div>
+          {(cam.targets ?? []).map((t, i) => (
+            <div key={i} className="detail-url mono" title={t}>
+              #{i} {t}
+            </div>
+          ))}
           <div className="detail-nums mono">
             pool {cam.pool} · escrowed {cam.escrowed} · paid {cam.paid_total} · claims{" "}
             {cam.claim_count}
@@ -241,7 +248,7 @@ export function CampaignDetail({
             <SubmitClaim
               account={account}
               campaignId={cam.campaign_id}
-              targetUrl={cam.target_url}
+              targets={cam.targets ?? []}
               disabled={disabled}
               onSubmitted={load}
             />

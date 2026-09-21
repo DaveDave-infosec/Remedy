@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { openCampaign } from "../lib/contracts";
 
+// V3 pillar 1: a campaign covers a SET of commit-pinned targets (max 10).
+// Claims later pick a target by its index, so the index is shown on each row.
+const MAX_TARGETS = 10;
+const PIN_RE = /^https:\/\/raw\.githubusercontent\.com\/[^/]+\/[^/]+\/[0-9a-fA-F]{40}\/.+$/;
+
 export function OpenCampaign({
   account,
   balance,
@@ -12,7 +17,8 @@ export function OpenCampaign({
   disabled: boolean;
   onOpened: () => void | Promise<void>;
 }) {
-  const [targetUrl, setTargetUrl] = useState("");
+  void account;
+  const [targets, setTargets] = useState<string[]>([""]);
   const [pool, setPool] = useState("20000");
   const [payCritical, setPayCritical] = useState("10000");
   const [payHigh, setPayHigh] = useState("5000");
@@ -26,11 +32,38 @@ export function OpenCampaign({
   const poolNum = Number(pool);
   const insufficient = balance !== null && poolNum > balance;
 
+  function setTargetAt(i: number, value: string) {
+    setTargets((prev) => prev.map((t, j) => (j === i ? value : t)));
+  }
+
+  function addTarget() {
+    setTargets((prev) => (prev.length >= MAX_TARGETS ? prev : [...prev, ""]));
+  }
+
+  function removeTarget(i: number) {
+    setTargets((prev) => (prev.length <= 1 ? prev : prev.filter((_, j) => j !== i)));
+  }
+
   async function submit() {
     setErr(null);
     setMsg(null);
-    if (targetUrl.trim() === "") {
-      setErr("Target URL is required.");
+    const cleaned = targets.map((t) => t.trim());
+    const emptyIdx = cleaned.findIndex((t) => t === "");
+    if (emptyIdx >= 0) {
+      setErr("Target #" + emptyIdx + " is empty. Fill it in or remove that row.");
+      return;
+    }
+    const badIdx = cleaned.findIndex((t) => !PIN_RE.test(t));
+    if (badIdx >= 0) {
+      setErr(
+        "Target #" +
+          badIdx +
+          " is not commit-pinned. Use https://raw.githubusercontent.com/<owner>/<repo>/<40-character commit sha>/<path>. A branch URL can change after a claim is filed."
+      );
+      return;
+    }
+    if (new Set(cleaned).size !== cleaned.length) {
+      setErr("The same target URL appears more than once. Each target must be distinct.");
       return;
     }
     if (poolNum <= 0) {
@@ -48,10 +81,10 @@ export function OpenCampaign({
       return;
     }
     setBusy(true);
-    setMsg("Opening campaign on-chain — this takes a few seconds…");
+    setMsg("Opening campaign on-chain, this takes a few seconds...");
     try {
       await openCampaign(
-        targetUrl.trim(),
+        cleaned,
         poolNum,
         Number(payCritical),
         Number(payHigh),
@@ -59,9 +92,9 @@ export function OpenCampaign({
         Number(payLow),
         isCritical
       );
-      setTargetUrl("");
+      setTargets([""]);
       // hold busy through the reload so the list shows the new campaign
-      // before the button resets — no revert/manual-refresh flicker.
+      // before the button resets (no revert/manual-refresh flicker).
       await onOpened();
       setMsg(null);
       setBusy(false);
@@ -76,17 +109,40 @@ export function OpenCampaign({
     <div className="panel">
       <h2>Open a security campaign</h2>
       <p className="hint">
-        Lock a bounty pool against a target contract. Researchers submit claims;
-        consensus settles them.
+        Lock a bounty pool against one or more target contracts (up to {MAX_TARGETS}).
+        Researchers file each claim against a specific target; consensus settles them.
       </p>
 
-      <label>Target contract source URL</label>
-      <input
-        type="text"
-        value={targetUrl}
-        placeholder="https://raw.githubusercontent.com/…/Contract.sol"
-        onChange={(e) => setTargetUrl(e.target.value)}
-      />
+      <label>Target contract source URLs (commit-pinned)</label>
+      {targets.map((t, i) => (
+        <div
+          key={i}
+          className="target-row"
+          style={{ display: "flex", gap: "8px", alignItems: "center", marginBottom: "6px" }}
+        >
+          <span className="mono" style={{ minWidth: "3.5em" }}>
+            #{i}
+          </span>
+          <input
+            type="text"
+            value={t}
+            style={{ flex: 1 }}
+            placeholder="https://raw.githubusercontent.com/<owner>/<repo>/<commit sha>/Contract.sol"
+            onChange={(e) => setTargetAt(i, e.target.value)}
+            disabled={busy}
+          />
+          {targets.length > 1 && (
+            <button type="button" onClick={() => removeTarget(i)} disabled={busy}>
+              Remove
+            </button>
+          )}
+        </div>
+      ))}
+      {targets.length < MAX_TARGETS && (
+        <button type="button" onClick={addTarget} disabled={busy}>
+          + Add target
+        </button>
+      )}
 
       <label>Bounty pool (genUSDC)</label>
       <input type="number" value={pool} onChange={(e) => setPool(e.target.value)} />
@@ -121,11 +177,11 @@ export function OpenCampaign({
           checked={isCritical}
           onChange={(e) => setIsCritical(e.target.checked)}
         />
-        Predefined critical target (credible Critical claims escalate & pause the campaign)
+        Predefined critical target (credible Critical claims escalate and pause the campaign)
       </label>
 
       <button className="primary" onClick={submit} disabled={disabled || busy || insufficient}>
-        {busy ? "Opening…" : "Open campaign"}
+        {busy ? "Opening..." : "Open campaign"}
       </button>
 
       {msg && <div className="msg mono">{msg}</div>}

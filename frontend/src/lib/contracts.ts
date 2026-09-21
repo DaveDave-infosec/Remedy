@@ -3,8 +3,9 @@ import { readContract, writeContract } from "./genlayer";
 // --- deployed Remedy contracts (GenLayer Studio, chainId 61999) ---
 // v2 TRUSTLESS: vault reads verdicts directly from the verifier; settlement
 // is permissionless (no owner relay).
-export const VAULT_ADDRESS = "0xd85CEA29Bc1406d969E574A9023e1e59EeE5f957";
-export const VERIFIER_ADDRESS = "0x814215e14048f9efeb9B7D0a550Ba587B59e603A";
+// V3 (multi-target campaigns): fresh verifier + vault pair, set_vault wired.
+export const VAULT_ADDRESS = "0x5c14d733f4B6555Ae03d74607Ad7DF9c544cE122";
+export const VERIFIER_ADDRESS = "0x1191764DD53bF36Ee91085276Ee6404257cBf711";
 
 // ---------- token ----------
 export async function mint(toAddress: string, amount: number) {
@@ -29,7 +30,7 @@ export async function getConfig(): Promise<any> {
 
 // ---------- campaigns ----------
 export async function openCampaign(
-  targetUrl: string,
+  targetUrls: string[],
   poolAmount: number,
   payCritical: number,
   payHigh: number,
@@ -38,7 +39,7 @@ export async function openCampaign(
   isCriticalTarget: boolean
 ) {
   return writeContract(VAULT_ADDRESS, "open_campaign", [
-    targetUrl,
+    targetUrls,
     poolAmount,
     payCritical,
     payHigh,
@@ -64,7 +65,7 @@ export async function getCampaignCount(): Promise<number> {
 export async function submitClaim(
   campaignId: string,
   submittedAt: string,
-  targetUrl: string,
+  targetIndex: number,
   pocText: string,
   patchDiff: string,
   claimedSeverity: string
@@ -72,7 +73,7 @@ export async function submitClaim(
   return writeContract(VAULT_ADDRESS, "submit_claim", [
     campaignId,
     submittedAt,
-    targetUrl,
+    targetIndex,
     pocText,
     patchDiff,
     claimedSeverity,

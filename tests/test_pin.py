@@ -9,7 +9,7 @@ def test_commit_pin_accept_and_reject(direct_vm, direct_deploy):
     vault.faucet()
 
     # a commit-pinned URL is accepted
-    assert vault.open_campaign(C.PINNED, 20000, 10000, 5000, 2000, 500, False) == "cam_0"
+    assert vault.open_campaign([C.PINNED], 20000, 10000, 5000, 2000, 500, False) == "cam_0"
 
     # every mutable / malformed target is rejected
     bad = [
@@ -23,5 +23,5 @@ def test_commit_pin_accept_and_reject(direct_vm, direct_deploy):
     ]
     for u in bad:
         with pytest.raises(Exception):
-            vault.open_campaign(u, 20000, 10000, 5000, 2000, 500, False)
+            vault.open_campaign([u], 20000, 10000, 5000, 2000, 500, False)
     print("PIN VALIDATION OK (1 accepted, %d rejected)" % len(bad))

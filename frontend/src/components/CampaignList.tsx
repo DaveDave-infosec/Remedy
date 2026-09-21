@@ -3,7 +3,7 @@ import { getAllCampaignIds, getCampaign } from "../lib/contracts";
 
 type Campaign = {
   campaign_id: string;
-  target_url: string;
+  targets: string[]; target_count: number;
   pool: number;
   escrowed: number;
   paid_total: number;
@@ -69,7 +69,7 @@ export function CampaignList({
                 <span className={"status status-" + c.status}>{c.status}</span>
                 {c.is_critical_target && <span className="crit-flag">critical target</span>}
               </div>
-              <div className="camrow-url mono">{c.target_url}</div>
+              <div className="camrow-url mono">{(c.targets ?? [])[0] ?? ""}{(c.targets ?? []).length > 1 ? " (+" + ((c.targets ?? []).length - 1) + " more)" : ""}</div>
               <div className="camrow-nums mono">
                 pool {c.pool} · escrowed {c.escrowed} · paid {c.paid_total} · claims{" "}
                 {c.claim_count}
