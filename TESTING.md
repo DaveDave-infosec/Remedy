@@ -1,4 +1,4 @@
-Expected: `21 passed`.
+Expected: `27 passed`.
 
 ## What each test proves
 
@@ -89,6 +89,29 @@ never treated as duplicates of each other.
 - `tests/test_multitarget.py::test_priors_are_scoped_per_target`: the prior claims
   handed to the verifier for its duplicate check contain only claims on the same
   target; a claim on another contract of the same campaign never appears.
+
+### Verdict parsing: tolerant of formatting, strict about content (V3)
+
+Found live: a correct Reject verdict arrived wrapped in a markdown code fence,
+and the old parser reverted the whole review on the first backtick. The verifier
+now extracts the single JSON object deterministically, refuses any answer it
+cannot read without recording anything (so the claim stays reviewable), and
+never treats the string "false" as a verified fix.
+
+- `tests/test_verifier_parse.py::test_fenced_verdict_is_parsed`: a verdict wrapped
+  in a markdown code fence, the exact live shape, is parsed and recorded.
+- `tests/test_verifier_parse.py::test_prose_wrapped_verdict_is_parsed`: a verdict
+  with text before and after the JSON is parsed and recorded.
+- `tests/test_verifier_parse.py::test_unreadable_verdict_refused_and_claim_stays_reviewable`:
+  an answer with no JSON object reverts with a clear message, records no verdict
+  and no review lock, and a later review of the same claim succeeds.
+- `tests/test_verifier_parse.py::test_unknown_outcome_refused`: a verdict naming an
+  outcome outside the five defined ones is refused and nothing is recorded.
+- `tests/test_verifier_parse.py::test_verify_fix_fenced_answer_is_parsed`: a fenced
+  fix verdict is parsed and bound to the patched artifact.
+- `tests/test_verifier_parse.py::test_verify_fix_string_false_is_not_fixed`: a fix
+  verdict whose fixed value is the string "false" is recorded as NOT fixed, so it
+  can never unlock escrow release.
 
 ## Harness note
 

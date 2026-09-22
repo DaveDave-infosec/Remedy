@@ -9,6 +9,27 @@ import hashlib
 # exact bytes judged is recorded on the verdict so drift is provable later.
 MAX_SOURCE_BYTES = 24000
 OVERSIZE_SENTINEL = "__REMEDY_SOURCE_OVERSIZE__"
+VALID_OUTCOMES = ("Reward", "Reject", "HoldForPatch", "Escalate", "MergeDuplicate")
+
+
+# V3 hardening: the consensus answer may arrive wrapped in a markdown code fence
+# or with text around it. Extract the single JSON object deterministically
+# (outside any nondeterministic block) instead of trusting bare JSON.
+def extract_json_object(raw) -> dict:
+    if isinstance(raw, dict):
+        return raw
+    s = str(raw).strip()
+    start = s.find("{")
+    end = s.rfind("}")
+    if start < 0 or end <= start:
+        return {}
+    try:
+        obj = json.loads(s[start:end + 1])
+    except Exception:
+        return {}
+    if not isinstance(obj, dict):
+        return {}
+    return obj
 
 
 class RemedyVerifier(gl.Contract):
@@ -215,7 +236,9 @@ class RemedyVerifier(gl.Contract):
             "the actual code), minority_note (one sentence; for MergeDuplicate, the "
             "strongest argument for a different attribution split; otherwise the "
             "strongest dissenting view, or empty string), duplicate_of_seq (integer; "
-            "-1 if novel), original_bps (integer), duplicate_bps (integer)."
+            "-1 if novel), original_bps (integer), duplicate_bps (integer). "
+            "Output the bare JSON object only: no markdown code fences and no "
+            "text before or after it."
         )
         criteria_check = (
             "The response is exactly one valid JSON object. outcome is one of "
@@ -235,16 +258,32 @@ class RemedyVerifier(gl.Contract):
             criteria=criteria_check,
         )
 
-        parsed = json.loads(raw)
-        outcome = str(parsed["outcome"])
-        severity = str(parsed["severity"])
-        payout = int(parsed["payout"])
-        patch_assessment = str(parsed["patch_assessment"])
-        reasoning = str(parsed["reasoning"])
-        minority_note = str(parsed["minority_note"])
-        dup_seq = int(parsed["duplicate_of_seq"])
-        original_bps = int(parsed["original_bps"])
-        duplicate_bps = int(parsed["duplicate_bps"])
+        parsed = extract_json_object(raw)
+        if not parsed:
+            raise gl.vm.UserError(
+                "the consensus verdict was not a readable JSON object; the review "
+                "is refused and nothing is recorded, so the claim can be reviewed again"
+            )
+        try:
+            outcome = str(parsed["outcome"])
+            severity = str(parsed["severity"])
+            payout = int(parsed["payout"])
+            patch_assessment = str(parsed["patch_assessment"])
+            reasoning = str(parsed["reasoning"])
+            minority_note = str(parsed["minority_note"])
+            dup_seq = int(parsed["duplicate_of_seq"])
+            original_bps = int(parsed["original_bps"])
+            duplicate_bps = int(parsed["duplicate_bps"])
+        except Exception:
+            raise gl.vm.UserError(
+                "the consensus verdict is missing a required field or has a "
+                "non-integer number; the review is refused and nothing is recorded"
+            )
+        if outcome not in VALID_OUTCOMES:
+            raise gl.vm.UserError(
+                "the consensus verdict named an unknown outcome; the review is "
+                "refused and nothing is recorded"
+            )
 
         is_dup = outcome == "MergeDuplicate"
         stored_dup_seq = dup_seq if (is_dup and dup_seq >= 0) else 0
@@ -329,7 +368,8 @@ class RemedyVerifier(gl.Contract):
             "on). Do NOT accept a cosmetic or unrelated change as a fix. Return ONLY one "
             "JSON object with keys: fixed (boolean; true only if the original flaw is "
             "genuinely closed in the patched source), reasoning (1-2 sentences grounded "
-            "in the actual patched code)."
+            "in the actual patched code). Output the bare JSON object only: no "
+            "markdown code fences and no text before or after it."
         )
         criteria_check = (
             "The response is exactly one valid JSON object with a boolean 'fixed' "
@@ -343,8 +383,25 @@ class RemedyVerifier(gl.Contract):
             criteria=criteria_check,
         )
 
-        parsed = json.loads(raw)
-        fixed = bool(parsed["fixed"])
+        parsed = extract_json_object(raw)
+        if not parsed or "fixed" not in parsed or "reasoning" not in parsed:
+            raise gl.vm.UserError(
+                "the consensus fix verdict was not a readable JSON object with "
+                "fixed and reasoning; nothing is recorded, so this artifact can be "
+                "verified again"
+            )
+        # Only a real boolean (or the exact words true/false) counts. bool("false")
+        # is True in Python, so a string must never be passed through bool().
+        fixed_raw = parsed["fixed"]
+        if isinstance(fixed_raw, bool):
+            fixed = fixed_raw
+        elif isinstance(fixed_raw, str) and fixed_raw.strip().lower() in ("true", "false"):
+            fixed = fixed_raw.strip().lower() == "true"
+        else:
+            raise gl.vm.UserError(
+                "the consensus fix verdict has a non-boolean fixed value; nothing is "
+                "recorded, so this artifact can be verified again"
+            )
         reasoning = str(parsed["reasoning"])
 
         self.fix_checked[patched_url] = True

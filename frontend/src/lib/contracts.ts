@@ -3,9 +3,9 @@ import { readContract, writeContract } from "./genlayer";
 // --- deployed Remedy contracts (GenLayer Studio, chainId 61999) ---
 // v2 TRUSTLESS: vault reads verdicts directly from the verifier; settlement
 // is permissionless (no owner relay).
-// V3 (multi-target campaigns): fresh verifier + vault pair, set_vault wired.
-export const VAULT_ADDRESS = "0x5c14d733f4B6555Ae03d74607Ad7DF9c544cE122";
-export const VERIFIER_ADDRESS = "0x1191764DD53bF36Ee91085276Ee6404257cBf711";
+// V3.1 (multi-target campaigns + strict verdict parsing): fresh verifier + vault pair, set_vault wired.
+export const VAULT_ADDRESS = "0xDAaFD97076781E9C754A4924275fF350073fF7Cc";
+export const VERIFIER_ADDRESS = "0x979eee07a7eb5F2023a517080E1eb4269B64F1d3";
 
 // ---------- token ----------
 export async function mint(toAddress: string, amount: number) {
