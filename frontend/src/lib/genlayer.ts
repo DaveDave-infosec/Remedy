@@ -141,3 +141,59 @@ export async function writeContract(address: string, functionName: string, args:
   await client.waitForTransactionReceipt({ hash: hash as any, status: "ACCEPTED", interval: 4000, retries: waitRetries });
   return hash as string;
 }
+
+function decodeRevertResult(result: any): string | null {
+  if (typeof result !== "string") return null;
+  try {
+    const decoded = atob(result);
+    if (decoded.charCodeAt(0) === 1) {
+      return decoded.slice(1);
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+export async function writeContractChecked(address: string, functionName: string, args: unknown[] = [], waitRetries = 30) {
+  const client = await getWriteClient();
+  let hash: string | null = null;
+  let lastErr: any;
+  for (let attempt = 0; attempt < 6; attempt++) {
+    try {
+      hash = await client.writeContract({ address, functionName, args, value: BigInt(0) });
+      break;
+    } catch (e: any) {
+      lastErr = e;
+      if (isBusy(e)) {
+        await new Promise((r) => setTimeout(r, 1200 * (attempt + 1)));
+        continue;
+      }
+      throw e;
+    }
+  }
+  if (!hash) throw lastErr;
+  const receipt = await client.waitForTransactionReceipt({ hash: hash as any, status: "ACCEPTED", interval: 4000, retries: waitRetries });
+  const leader = (receipt as any)?.consensus_data?.leader_receipt?.[0];
+  const status = leader?.execution_result;
+  if (status && status !== "SUCCESS") {
+    console.log("[remedy] reverted receipt", JSON.stringify(leader, (k, v) => typeof v === "bigint" ? v.toString() : v, 2));
+    // Prefer the contract's own UserError message; otherwise the LAST line of
+    // stderr, which is where a Python traceback names the actual error.
+    const stderr: string = typeof leader?.genvm_result?.stderr === "string" ? leader.genvm_result.stderr : "";
+    const lastStderrLine = stderr.split("\n").map((l) => l.trim()).filter((l) => l !== "").pop() || "";
+    let reason: string =
+      decodeRevertResult(leader?.result) ||
+      lastStderrLine ||
+      (typeof leader?.error === "string" ? leader.error : "") ||
+      (typeof leader?.genvm_result?.error === "string" ? leader.genvm_result.error : "") ||
+      "the transaction reverted (see browser console for the full receipt)";
+    reason = reason.trim();
+    // keep the tail: the end of a long error is where the cause is
+    if (reason.length > 300) reason = "..." + reason.slice(-300);
+    const err = new Error(reason);
+    (err as any).reverted = true;
+    throw err;
+  }
+  return hash as string;
+}

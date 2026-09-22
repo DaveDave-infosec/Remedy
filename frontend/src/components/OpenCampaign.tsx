@@ -139,7 +139,7 @@ export function OpenCampaign({
         </div>
       ))}
       {targets.length < MAX_TARGETS && (
-        <button type="button" onClick={addTarget} disabled={busy}>
+        <button type="button" className="btn-secondary" onClick={addTarget} disabled={busy}>
           + Add target
         </button>
       )}

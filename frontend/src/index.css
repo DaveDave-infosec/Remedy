@@ -87,6 +87,16 @@ body {
 .wallet button:disabled { opacity: 0.45; cursor: default; }
 .wallet button.primary { background: var(--text); border-color: var(--text); color: var(--ground); font-weight: 600; }
 .wallet button.link { background: none; border: none; text-decoration: underline; padding: 7px 4px; color: var(--text-dim); }
+
+/* page-wide secondary button (matches wallet-bar bare button) */
+.btn-secondary {
+  background: var(--surface-2); color: var(--text);
+  border: 1px solid var(--rule-strong); border-radius: 5px;
+  padding: 7px 13px; font-size: 13px; font-family: var(--body); cursor: pointer;
+  transition: border-color 0.15s;
+}
+.btn-secondary:hover:not(:disabled) { border-color: var(--text-dim); }
+.btn-secondary:disabled { opacity: 0.45; cursor: default; }
 .mode-badge {
   font-family: var(--mono); font-size: 10px; text-transform: uppercase;
   letter-spacing: 0.1em; padding: 4px 8px; border-radius: 3px; border: 1px solid var(--rule-strong);
@@ -364,6 +374,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .action-row { display: flex; align-items: center; gap: 14px; }
 .danger-link { color: var(--text-dim); }
 .danger-link:hover { color: var(--crit); }
+
+/* page-wide text link (matches wallet-bar .link button) */
+.text-link {
+  background: none; border: none; text-decoration: underline; padding: 7px 4px; color: var(--text-dim);
+  cursor: pointer; font-size: 13px; font-family: var(--body);
+}
+.text-link:disabled { opacity: 0.45; cursor: default; }
+.text-link.danger-link { color: var(--text-dim); }
 .confirm-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 8px 0; }
 .confirm-text { font-size: 12px; color: var(--text); }
 .status-dismissed { color: var(--text-dim); border-color: var(--rule-strong); }

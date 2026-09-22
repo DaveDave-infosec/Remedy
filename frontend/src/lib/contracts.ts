@@ -1,4 +1,4 @@
-import { readContract, writeContract } from "./genlayer";
+import { readContract, writeContractChecked } from "./genlayer";
 
 // --- deployed Remedy contracts (GenLayer Studio, chainId 61999) ---
 // v2 TRUSTLESS: vault reads verdicts directly from the verifier; settlement
@@ -9,11 +9,11 @@ export const VERIFIER_ADDRESS = "0x979eee07a7eb5F2023a517080E1eb4269B64F1d3";
 
 // ---------- token ----------
 export async function mint(toAddress: string, amount: number) {
-  return writeContract(VAULT_ADDRESS, "mint", [toAddress, amount]);
+  return writeContractChecked(VAULT_ADDRESS, "mint", [toAddress, amount]);
 }
 
 export async function faucet() {
-  return writeContract(VAULT_ADDRESS, "faucet", []);
+  return writeContractChecked(VAULT_ADDRESS, "faucet", []);
 }
 
 export async function hasClaimedFaucet(address: string): Promise<boolean> {
@@ -38,7 +38,7 @@ export async function openCampaign(
   payLow: number,
   isCriticalTarget: boolean
 ) {
-  return writeContract(VAULT_ADDRESS, "open_campaign", [
+  return writeContractChecked(VAULT_ADDRESS, "open_campaign", [
     targetUrls,
     poolAmount,
     payCritical,
@@ -70,7 +70,7 @@ export async function submitClaim(
   patchDiff: string,
   claimedSeverity: string
 ) {
-  return writeContract(VAULT_ADDRESS, "submit_claim", [
+  return writeContractChecked(VAULT_ADDRESS, "submit_claim", [
     campaignId,
     submittedAt,
     targetIndex,
@@ -93,12 +93,12 @@ export async function getPriorsJson(campaignId: string, excludeClaimId: string):
 }
 
 export async function dismissClaim(claimId: string) {
-  return writeContract(VAULT_ADDRESS, "dismiss_claim", [claimId]);
+  return writeContractChecked(VAULT_ADDRESS, "dismiss_claim", [claimId]);
 }
 
 // ---------- verifier ----------
 export async function runReview(claimId: string) {
-  return writeContract(VERIFIER_ADDRESS, "run_review", [claimId]);
+  return writeContractChecked(VERIFIER_ADDRESS, "run_review", [claimId]);
 }
 
 export async function getVerdict(caseId: string): Promise<any> {
@@ -111,27 +111,27 @@ export async function getAllVerifierCaseIds(): Promise<string[]> {
 
 // ---------- TRUSTLESS settlement (permissionless; vault reads verifier) ----------
 export async function settleClaim(claimId: string) {
-  return writeContract(VAULT_ADDRESS, "settle_claim", [claimId]);
+  return writeContractChecked(VAULT_ADDRESS, "settle_claim", [claimId]);
 }
 
 export async function submitFix(claimId: string, patchedUrl: string) {
-  return writeContract(VAULT_ADDRESS, "submit_fix", [claimId, patchedUrl]);
+  return writeContractChecked(VAULT_ADDRESS, "submit_fix", [claimId, patchedUrl]);
 }
 
 export async function verifyFix(claimId: string) {
-  return writeContract(VERIFIER_ADDRESS, "verify_fix", [claimId]);
+  return writeContractChecked(VERIFIER_ADDRESS, "verify_fix", [claimId]);
 }
 
 export async function releaseEscrow(claimId: string) {
-  return writeContract(VAULT_ADDRESS, "release_escrow", [claimId]);
+  return writeContractChecked(VAULT_ADDRESS, "release_escrow", [claimId]);
 }
 
 export async function refundEscrow(claimId: string) {
-  return writeContract(VAULT_ADDRESS, "refund_escrow", [claimId]);
+  return writeContractChecked(VAULT_ADDRESS, "refund_escrow", [claimId]);
 }
 
 export async function resumeCampaign(campaignId: string) {
-  return writeContract(VAULT_ADDRESS, "resume_campaign", [campaignId]);
+  return writeContractChecked(VAULT_ADDRESS, "resume_campaign", [campaignId]);
 }
 
 export async function getFixResult(patchedUrl: string): Promise<any> {

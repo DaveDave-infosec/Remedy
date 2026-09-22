@@ -101,6 +101,12 @@ export function ClaimActions({
       } catch (e: any) {
         reviewError = e;
       }
+      if (reviewError && reviewError.reverted) {
+        setErr("Review reverted: " + reviewError.message + " Nothing was recorded, so this claim can be reviewed again.");
+        setPhase(-1);
+        setBusy(false);
+        return;
+      }
 
       setPhase(2);
       // A review is a heavy consensus write (web fetch + model), so the verdict can
@@ -233,7 +239,7 @@ export function ClaimActions({
             {busy ? "Reviewing…" : "Run review"}
           </button>
           <button
-            className="link danger-link"
+            className="text-link danger-link"
             onClick={() => setConfirmDismiss(true)}
             disabled={disabled || busy}
           >
@@ -312,16 +318,6 @@ export function ClaimActions({
           <div className="verdict-actions">
             <button className="primary small" onClick={settle} disabled={settling}>
               Settle: {verdict.outcome}
-            </button>
-            <button
-              className="link"
-              onClick={() => {
-                setVerdict(null);
-                setErr(null);
-              }}
-              disabled={settling}
-            >
-              discard verdict
             </button>
           </div>
           <div className="trustless-note mono">
