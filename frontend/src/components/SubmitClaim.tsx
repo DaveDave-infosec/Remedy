@@ -18,12 +18,14 @@ export function SubmitClaim({
   account,
   campaignId,
   targets,
+  bond,
   disabled,
   onSubmitted,
 }: {
   account: string;
   campaignId: string;
   targets: string[];
+  bond: number;
   disabled: boolean;
   onSubmitted: () => void | Promise<void>;
 }) {
@@ -147,6 +149,15 @@ export function SubmitClaim({
         <option>Medium</option>
         <option>Low</option>
       </select>
+
+      {bond > 0 ? (
+        <div className="hint">
+          Filing locks a bond of {bond} genUSDC from your balance. It comes back on
+          any credible outcome and is forfeited to the bounty pool on Reject.
+        </div>
+      ) : (
+        <div className="hint">This campaign requires no claim bond.</div>
+      )}
 
       <button className="primary" onClick={submit} disabled={disabled || busy || noTargets}>
         {busy ? "Submitting..." : "Submit claim"}

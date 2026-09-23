@@ -4,7 +4,7 @@ import pytest
 
 def _hold(direct_vm, vault, S):
     direct_vm.sender = S(C.PROJECT)
-    vault.faucet(); vault.open_campaign([C.PINNED], 20000, 10000, 5000, 2000, 500, False)
+    vault.faucet(); vault.open_campaign([C.PINNED], 20000, 10000, 5000, 2000, 500, False, 0)
     direct_vm.sender = S(C.HUNTER)
     vault.submit_claim("cam_0", "2026-01-01T00:00:00Z", 0, "poc", "--- patch ---", "High")
     direct_vm.warp("2026-06-01T00:00:00Z")

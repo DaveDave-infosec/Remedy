@@ -6,7 +6,7 @@ def test_reject_pays_nothing(direct_vm, direct_deploy):
     from genlayer.py.types import Address
     def S(a): return Address(a)
     direct_vm.sender = S(C.PROJECT)
-    vault.faucet(); vault.open_campaign([C.PINNED], 20000, 10000, 5000, 2000, 500, False)
+    vault.faucet(); vault.open_campaign([C.PINNED], 20000, 10000, 5000, 2000, 500, False, 0)
     direct_vm.sender = S(C.HUNTER)
     vault.submit_claim("cam_0", "2026-01-01T00:00:00Z", 0, "false claim", "", "Critical")
     direct_vm._gl_call_hook = C.make_hook({
@@ -26,7 +26,7 @@ def test_reward_value_conservation(direct_vm, direct_deploy):
     from genlayer.py.types import Address
     def S(a): return Address(a)
     direct_vm.sender = S(C.PROJECT)
-    vault.faucet(); vault.open_campaign([C.PINNED], 20000, 10000, 5000, 2000, 500, False)
+    vault.faucet(); vault.open_campaign([C.PINNED], 20000, 10000, 5000, 2000, 500, False, 0)
     direct_vm.sender = S(C.HUNTER)
     vault.submit_claim("cam_0", "2026-01-01T00:00:00Z", 0, "poc", "", "Critical")
     direct_vm._gl_call_hook = C.make_hook({

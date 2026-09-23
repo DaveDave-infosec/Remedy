@@ -1,4 +1,4 @@
-Expected: `27 passed`.
+Expected: `38 passed`.
 
 ## What each test proves
 
@@ -112,6 +112,44 @@ never treats the string "false" as a verified fix.
 - `tests/test_verifier_parse.py::test_verify_fix_string_false_is_not_fixed`: a fix
   verdict whose fixed value is the string "false" is recorded as NOT fixed, so it
   can never unlock escrow release.
+
+### Claim bond and researcher reputation (V3)
+
+Submitting a claim locks a bond set by the campaign. The bond comes back on any
+credible outcome and on a pre-review dismissal, and is forfeited into the
+campaign's bounty pool on Reject, so spam costs the spammer and funds future
+bounties. Each bond moves exactly once. Every researcher address carries an
+on-chain record updated only by settlement, release, and dismissal. The record
+is shown to users but never enters the verdict: claims are judged on evidence,
+not on their author.
+
+- `tests/test_bond_reputation.py::test_submit_locks_bond_and_counts`: filing a
+  claim locks the campaign bond from the researcher and counts the submission.
+- `tests/test_bond_reputation.py::test_bond_requires_balance`: a researcher who
+  cannot cover the bond cannot file, and no claim is created.
+- `tests/test_bond_reputation.py::test_negative_bond_refused`: a campaign cannot
+  be opened with a negative bond.
+- `tests/test_bond_reputation.py::test_zero_bond_campaign_needs_no_balance`: a
+  campaign may set no bond, and then filing needs no balance.
+- `tests/test_bond_reputation.py::test_reject_forfeits_bond_into_pool`: a Reject
+  moves the bond into the campaign pool and records the rejection.
+- `tests/test_bond_reputation.py::test_reward_returns_bond_and_records_earnings`:
+  a Reward returns the bond in full, pays from the schedule, and records the
+  earnings.
+- `tests/test_bond_reputation.py::test_hold_returns_bond_then_release_records_reward`:
+  a HoldForPatch returns the bond at settlement; the reward is only recorded once
+  the verified fix releases the escrow.
+- `tests/test_bond_reputation.py::test_refunded_hold_is_neutral_on_record`: a held
+  claim refunded after the grace window counts as neither rewarded nor rejected,
+  since consensus found it credible.
+- `tests/test_bond_reputation.py::test_merge_returns_both_bonds_and_records_both`:
+  a MergeDuplicate returns both bonds, pays the attribution split, and records the
+  first reporter as rewarded and the later one as merged.
+- `tests/test_bond_reputation.py::test_escalate_returns_bond`: an Escalate returns
+  the bond and records the escalation.
+- `tests/test_bond_reputation.py::test_project_dismiss_returns_bond_to_researcher`:
+  when the project dismisses an unreviewed claim, the bond goes back to the
+  researcher and the project gains nothing.
 
 ## Harness note
 

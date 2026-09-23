@@ -8,7 +8,7 @@ def test_permissionless_bystander_settle_reward(direct_vm, direct_deploy):
 
     direct_vm.sender = S(C.PROJECT)
     vault.faucet()
-    vault.open_campaign([C.PINNED], 20000, 10000, 5000, 2000, 500, False)
+    vault.open_campaign([C.PINNED], 20000, 10000, 5000, 2000, 500, False, 0)
 
     direct_vm.sender = S(C.HUNTER)
     vault.submit_claim("cam_0", "2026-01-01T00:00:00Z", 0, "unchecked call", "", "High")

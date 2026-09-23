@@ -25,6 +25,7 @@ export function OpenCampaign({
   const [payMedium, setPayMedium] = useState("2000");
   const [payLow, setPayLow] = useState("500");
   const [isCritical, setIsCritical] = useState(false);
+  const [bond, setBond] = useState("100");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
@@ -70,6 +71,11 @@ export function OpenCampaign({
       setErr("Bounty pool must be a positive amount.");
       return;
     }
+    const bondNum = Number(bond);
+    if (!Number.isInteger(bondNum) || bondNum < 0) {
+      setErr("Claim bond must be a whole number of 0 or more.");
+      return;
+    }
     if (insufficient) {
       setErr(
         "Insufficient balance: your pool of " +
@@ -90,7 +96,8 @@ export function OpenCampaign({
         Number(payHigh),
         Number(payMedium),
         Number(payLow),
-        isCritical
+        isCritical,
+        Number(bond)
       );
       setTargets([""]);
       // hold busy through the reload so the list shows the new campaign
@@ -151,6 +158,13 @@ export function OpenCampaign({
           Pool exceeds your balance ({balance} genUSDC). Claim the faucet or lower the pool.
         </div>
       )}
+
+      <label>Claim bond (genUSDC)</label>
+      <input type="number" min={0} value={bond} onChange={(e) => setBond(e.target.value)} />
+      <div className="hint">
+        Each claim locks this bond. It comes back on any credible outcome and is
+        forfeited to the bounty pool on Reject. Set 0 for no bond.
+      </div>
 
       <div className="grid4">
         <div>

@@ -3,9 +3,9 @@ import { readContract, writeContractChecked } from "./genlayer";
 // --- deployed Remedy contracts (GenLayer Studio, chainId 61999) ---
 // v2 TRUSTLESS: vault reads verdicts directly from the verifier; settlement
 // is permissionless (no owner relay).
-// V3.1 (multi-target campaigns + strict verdict parsing): fresh verifier + vault pair, set_vault wired.
-export const VAULT_ADDRESS = "0xDAaFD97076781E9C754A4924275fF350073fF7Cc";
-export const VERIFIER_ADDRESS = "0x979eee07a7eb5F2023a517080E1eb4269B64F1d3";
+// V3.2 (multi-target campaigns, strict verdict parsing, claim bond + researcher record): fresh verifier + vault pair, set_vault wired.
+export const VAULT_ADDRESS = "0x60c5C00b46a0845A11E5a1D5Cf22a1607E55e994";
+export const VERIFIER_ADDRESS = "0x4712c4165eFaf8CCd8F0371E7821ed729c872569";
 
 // ---------- token ----------
 export async function mint(toAddress: string, amount: number) {
@@ -36,7 +36,8 @@ export async function openCampaign(
   payHigh: number,
   payMedium: number,
   payLow: number,
-  isCriticalTarget: boolean
+  isCriticalTarget: boolean,
+  bondAmount: number
 ) {
   return writeContractChecked(VAULT_ADDRESS, "open_campaign", [
     targetUrls,
@@ -46,6 +47,7 @@ export async function openCampaign(
     payMedium,
     payLow,
     isCriticalTarget,
+    bondAmount,
   ]);
 }
 
@@ -140,4 +142,8 @@ export async function getFixResult(patchedUrl: string): Promise<any> {
 
 export async function getCaseForClaim(claimId: string): Promise<string> {
   return (await readContract(VERIFIER_ADDRESS, "get_case_for_claim", [claimId])) as string;
+}
+
+export async function getReputation(address: string): Promise<any> {
+  return await readContract(VAULT_ADDRESS, "get_reputation", [address]);
 }

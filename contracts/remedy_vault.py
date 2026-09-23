@@ -42,6 +42,7 @@ class RemedyVault(gl.Contract):
     cam_pay_low: TreeMap[str, u256]
     cam_is_critical_target: TreeMap[str, bool]
     cam_claim_count: TreeMap[str, u256]
+    cam_bond: TreeMap[str, u256]
 
     claim_ids: DynArray[str]
     claim_counter: u256
@@ -66,6 +67,17 @@ class RemedyVault(gl.Contract):
     cl_attribution_bps: TreeMap[str, u256]
     cl_held_at: TreeMap[str, str]
     cl_patched_url: TreeMap[str, str]
+    cl_bond: TreeMap[str, u256]
+    cl_bond_status: TreeMap[str, str]
+
+    # --- V3 pillar 2: researcher reputation (flat, keyed by lowercase address) ---
+    rep_submitted: TreeMap[str, u256]
+    rep_rewarded: TreeMap[str, u256]
+    rep_rejected: TreeMap[str, u256]
+    rep_merged: TreeMap[str, u256]
+    rep_escalated: TreeMap[str, u256]
+    rep_dismissed: TreeMap[str, u256]
+    rep_earned: TreeMap[str, u256]
 
     def __init__(self, owner_address: str, fee_wallet_address: str, protocol_fee_bps: int, verifier_address: str):
         self.owner = owner_address.lower()
@@ -122,6 +134,7 @@ class RemedyVault(gl.Contract):
         pay_medium: int,
         pay_low: int,
         is_critical_target: bool,
+        bond_amount: int,
     ) -> str:
         project = gl.message.sender_address.as_hex.lower()
 
@@ -148,6 +161,9 @@ class RemedyVault(gl.Contract):
         amt = int(pool_amount)
         if amt <= 0:
             raise gl.vm.UserError("pool must be positive")
+        bond = int(bond_amount)
+        if bond < 0:
+            raise gl.vm.UserError("claim bond cannot be negative")
         bal = int(self.balances[project]) if project in self.balances else 0
         if bal < amt:
             raise gl.vm.UserError("insufficient GenUSDC balance for pool")
@@ -171,6 +187,7 @@ class RemedyVault(gl.Contract):
         self.cam_pay_low[campaign_id] = u256(int(pay_low))
         self.cam_is_critical_target[campaign_id] = is_critical_target
         self.cam_claim_count[campaign_id] = u256(0)
+        self.cam_bond[campaign_id] = u256(bond)
         return campaign_id
 
     @gl.public.write
@@ -198,6 +215,15 @@ class RemedyVault(gl.Contract):
         resolved_url = self.cam_target_at[campaign_id + "#" + str(idx)]
 
         submitter = gl.message.sender_address.as_hex.lower()
+        bond = int(self.cam_bond[campaign_id]) if campaign_id in self.cam_bond else 0
+        if bond > 0:
+            sbal = int(self.balances[submitter]) if submitter in self.balances else 0
+            if sbal < bond:
+                raise gl.vm.UserError(
+                    "insufficient GenUSDC balance for this campaign's claim bond of "
+                    + str(bond) + "; claim the faucet first"
+                )
+            self.balances[submitter] = u256(sbal - bond)
         claim_id = "clm_" + str(int(self.claim_counter))
         self.claim_counter = u256(int(self.claim_counter) + 1)
         self.claim_ids.append(claim_id)
@@ -225,6 +251,9 @@ class RemedyVault(gl.Contract):
         self.cl_merged_with[claim_id] = ""
         self.cl_attribution_bps[claim_id] = u256(0)
         self.cl_patched_url[claim_id] = ""
+        self.cl_bond[claim_id] = u256(bond)
+        self.cl_bond_status[claim_id] = "locked" if bond > 0 else "none"
+        self._rep_add("submitted", submitter, 1)
         return claim_id
 
     @gl.public.view
@@ -275,6 +304,46 @@ class RemedyVault(gl.Contract):
         if severity == "Low":
             return int(self.cam_pay_low[campaign_id])
         return 0
+
+    def _rep_add(self, which: str, addr: str, amount: int):
+        a = addr.lower()
+        if which == "submitted":
+            m = self.rep_submitted
+        elif which == "rewarded":
+            m = self.rep_rewarded
+        elif which == "rejected":
+            m = self.rep_rejected
+        elif which == "merged":
+            m = self.rep_merged
+        elif which == "escalated":
+            m = self.rep_escalated
+        elif which == "dismissed":
+            m = self.rep_dismissed
+        elif which == "earned":
+            m = self.rep_earned
+        else:
+            raise gl.vm.UserError("unknown reputation field")
+        cur = int(m[a]) if a in m else 0
+        m[a] = u256(cur + amount)
+
+    # The bond goes back to the researcher on any credible outcome or a
+    # pre-review dismissal, and into the campaign pool on Reject. Each claim's
+    # bond moves exactly once: only a "locked" bond can be returned or forfeited.
+    def _return_bond(self, claim_id: str):
+        if claim_id not in self.cl_bond_status or self.cl_bond_status[claim_id] != "locked":
+            return
+        bond = int(self.cl_bond[claim_id])
+        sub = self.cl_submitter[claim_id]
+        bal = int(self.balances[sub]) if sub in self.balances else 0
+        self.balances[sub] = u256(bal + bond)
+        self.cl_bond_status[claim_id] = "returned"
+
+    def _forfeit_bond(self, claim_id: str, campaign_id: str):
+        if claim_id not in self.cl_bond_status or self.cl_bond_status[claim_id] != "locked":
+            return
+        bond = int(self.cl_bond[claim_id])
+        self.cam_pool[campaign_id] = u256(int(self.cam_pool[campaign_id]) + bond)
+        self.cl_bond_status[claim_id] = "forfeited"
 
     def _is_hex40(self, s: str) -> bool:
         if len(s) != 40:
@@ -360,12 +429,16 @@ class RemedyVault(gl.Contract):
             self.cl_outcome[claim_id] = "Reject"
             self.cl_status[claim_id] = "rejected"
             self.cl_payout[claim_id] = u256(0)
+            self._forfeit_bond(claim_id, campaign_id)
+            self._rep_add("rejected", self.cl_submitter[claim_id], 1)
             return "Reject"
 
         if outcome == "Escalate":
             self.cl_outcome[claim_id] = "Escalate"
             self.cl_status[claim_id] = "escalated"
             self.cam_status[campaign_id] = "paused"
+            self._return_bond(claim_id)
+            self._rep_add("escalated", self.cl_submitter[claim_id], 1)
             return "Escalate"
 
         if outcome == "Reward":
@@ -384,6 +457,9 @@ class RemedyVault(gl.Contract):
             self.cl_outcome[claim_id] = "Reward"
             self.cl_status[claim_id] = "rewarded"
             self.cl_payout[claim_id] = u256(net)
+            self._return_bond(claim_id)
+            self._rep_add("rewarded", submitter, 1)
+            self._rep_add("earned", submitter, net)
             return "Reward"
 
         if outcome == "HoldForPatch":
@@ -395,6 +471,7 @@ class RemedyVault(gl.Contract):
             self.cl_status[claim_id] = "held"
             self.cl_escrowed[claim_id] = u256(payout)
             self.cl_held_at[claim_id] = str(gl.message_raw["datetime"])
+            self._return_bond(claim_id)
             return "HoldForPatch"
 
         if outcome == "MergeDuplicate":
@@ -439,6 +516,9 @@ class RemedyVault(gl.Contract):
                 self.cl_case_id[original_claim_id] = case_id
                 self.cl_merged_with[original_claim_id] = claim_id
                 self.cl_attribution_bps[original_claim_id] = u256(o_bps)
+                self._return_bond(original_claim_id)
+                self._rep_add("rewarded", orig_sub, 1)
+                self._rep_add("earned", orig_sub, orig_net)
 
             if distributed_fee > 0:
                 fbal = int(self.balances[self.fee_wallet]) if self.fee_wallet in self.balances else 0
@@ -452,6 +532,9 @@ class RemedyVault(gl.Contract):
             self.cl_payout[claim_id] = u256(dup_net)
             self.cl_merged_with[claim_id] = original_claim_id
             self.cl_attribution_bps[claim_id] = u256(d_bps)
+            self._return_bond(claim_id)
+            self._rep_add("merged", dup_sub, 1)
+            self._rep_add("earned", dup_sub, dup_net)
             return "MergeDuplicate"
 
         raise gl.vm.UserError("unknown outcome from verifier")
@@ -513,6 +596,8 @@ class RemedyVault(gl.Contract):
         self.cl_payout[claim_id] = u256(net)
         self.cl_outcome[claim_id] = "Reward"
         self.cl_status[claim_id] = "rewarded"
+        self._rep_add("rewarded", submitter, 1)
+        self._rep_add("earned", submitter, net)
         return "released"
 
     @gl.public.write
@@ -588,6 +673,8 @@ class RemedyVault(gl.Contract):
         self.cl_outcome[claim_id] = "Dismissed"
         self.cl_status[claim_id] = "dismissed"
         self.cl_payout[claim_id] = u256(0)
+        self._return_bond(claim_id)
+        self._rep_add("dismissed", submitter, 1)
 
     @gl.public.view
     def get_campaign(self, campaign_id: str) -> dict:
@@ -612,6 +699,7 @@ class RemedyVault(gl.Contract):
             "pay_low": int(self.cam_pay_low[campaign_id]),
             "is_critical_target": self.cam_is_critical_target[campaign_id],
             "claim_count": int(self.cam_claim_count[campaign_id]),
+            "bond": int(self.cam_bond[campaign_id]) if campaign_id in self.cam_bond else 0,
         }
 
     @gl.public.view
@@ -641,6 +729,8 @@ class RemedyVault(gl.Contract):
             "attribution_bps": int(self.cl_attribution_bps[claim_id]),
             "held_at": self.cl_held_at[claim_id] if claim_id in self.cl_held_at else "",
             "patched_url": self.cl_patched_url[claim_id] if claim_id in self.cl_patched_url else "",
+            "bond": int(self.cl_bond[claim_id]) if claim_id in self.cl_bond else 0,
+            "bond_status": self.cl_bond_status[claim_id] if claim_id in self.cl_bond_status else "none",
         }
 
     @gl.public.view
@@ -662,3 +752,21 @@ class RemedyVault(gl.Contract):
             if self.cl_campaign[cid] == campaign_id:
                 out.append(cid)
         return out
+
+    @gl.public.view
+    def get_reputation(self, address: str) -> dict:
+        a = address.lower()
+
+        def g(m) -> int:
+            return int(m[a]) if a in m else 0
+
+        return {
+            "address": a,
+            "submitted": g(self.rep_submitted),
+            "rewarded": g(self.rep_rewarded),
+            "rejected": g(self.rep_rejected),
+            "merged": g(self.rep_merged),
+            "escalated": g(self.rep_escalated),
+            "dismissed": g(self.rep_dismissed),
+            "earned": g(self.rep_earned),
+        }

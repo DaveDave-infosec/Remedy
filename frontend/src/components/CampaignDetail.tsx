@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { getCampaign, getClaimsForCampaign, getClaim, resumeCampaign } from "../lib/contracts";
+import { getCampaign, getClaimsForCampaign, getClaim, resumeCampaign, getReputation } from "../lib/contracts";
 import { SubmitClaim } from "./SubmitClaim";
 import { ClaimActions } from "./ClaimActions";
 import { SeveritySeal } from "./SeveritySeal";
@@ -10,6 +10,7 @@ type Campaign = {
   project: string;
   targets: string[];
   target_count: number;
+  bond: number;
   pool: number;
   escrowed: number;
   paid_total: number;
@@ -35,6 +36,8 @@ type Claim = {
   escrowed: number;
   target_url: string;
   target_index: number;
+  bond: number;
+  bond_status: string;
   poc_text: string;
   patch_diff: string;
   reasoning: string;
@@ -61,6 +64,7 @@ export function CampaignDetail({
   const [justSettled, setJustSettled] = useState<string | null>(null);
   const [showResolved, setShowResolved] = useState(false);
   const [resuming, setResuming] = useState(false);
+  const [reps, setReps] = useState<Record<string, any>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -76,6 +80,16 @@ export function CampaignDetail({
       }
       out.sort((a, b) => a.seq - b.seq);
       setClaims(out);
+      const who = Array.from(new Set(out.map((c) => c.submitter.toLowerCase())));
+      const rmap: Record<string, any> = {};
+      for (const a of who) {
+        try {
+          rmap[a] = await getReputation(a);
+        } catch {
+          /* the record is informational; a failed read must not block the page */
+        }
+      }
+      setReps(rmap);
     } catch (e: any) {
       setErr(e?.message ?? String(e));
     } finally {
@@ -118,6 +132,23 @@ export function CampaignDetail({
   const openClaims = claims.filter((c) => c.status === "open");
   const resolvedClaims = claims.filter((c) => c.status !== "open");
 
+  function bondLabel(cl: Claim): string {
+    const b = cl.bond ?? 0;
+    if (!b || cl.bond_status === "none") return "no bond";
+    if (cl.bond_status === "locked") return "bond " + b + " locked";
+    if (cl.bond_status === "returned") return "bond " + b + " returned";
+    if (cl.bond_status === "forfeited") return "bond " + b + " forfeited to pool";
+    return "bond " + b;
+  }
+
+  function repLabel(r: any): string {
+    if (!r) return "";
+    return (
+      " | researcher record: " + r.rewarded + " rewarded, " + r.merged + " merged, " +
+      r.rejected + " rejected, " + r.earned + " earned"
+    );
+  }
+
   function renderClaim(cl: Claim) {
     return (
       <div key={cl.claim_id} className="claimrow claimrow-sealed">
@@ -147,6 +178,11 @@ export function CampaignDetail({
             {cl.claimed_severity}
             {cl.payout > 0 ? " · payout " + cl.payout : ""}
             {cl.escrowed > 0 ? " · escrow " + cl.escrowed : ""}
+          </div>
+
+          <div className="claimrow-sub mono">
+            {bondLabel(cl)}
+            {repLabel(reps[cl.submitter.toLowerCase()])}
           </div>
 
           <DisclosureTimeline
@@ -220,6 +256,7 @@ export function CampaignDetail({
               #{i} {t}
             </div>
           ))}
+          <div className="detail-nums mono">claim bond {cam.bond ?? 0} genUSDC</div>
           <div className="detail-nums mono">
             pool {cam.pool} · escrowed {cam.escrowed} · paid {cam.paid_total} · claims{" "}
             {cam.claim_count}
@@ -249,6 +286,7 @@ export function CampaignDetail({
               account={account}
               campaignId={cam.campaign_id}
               targets={cam.targets ?? []}
+              bond={cam.bond ?? 0}
               disabled={disabled}
               onSubmitted={load}
             />
