@@ -719,3 +719,288 @@
 
 /* PATCH-2: keep the longest grade word (CRITICAL) inside the seal ring */
 .lp-seal-grade { font-size: 20px; letter-spacing: 0.02em; }
+
+
+/* ============================================================
+   V3 pillar 3, phase B1: the hero pipeline, accent CTA, ember glow.
+   The pipeline is the product: a claim settling through consensus.
+   All motion here stops under prefers-reduced-motion (end of block).
+   ============================================================ */
+
+.lp-hero { position: relative; }
+.lp-hero > * { position: relative; z-index: 1; }
+
+.cp { display: flex; flex-direction: column; gap: 18px; width: 100%; }
+
+.cp-card {
+  background: var(--surface);
+  border: 1px solid var(--rule-strong);
+  border-left: 2px solid var(--crit);
+  border-radius: 4px;
+  padding: 16px 18px;
+  transition: border-left-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+.cp-card-settled {
+  border-left-color: var(--paid);
+  box-shadow: 0 0 0 1px rgba(122, 155, 118, 0.10);
+}
+
+.cp-card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.cp-id { font-family: var(--mono); font-size: 13px; color: var(--text); font-weight: 500; }
+.cp-target { font-family: var(--mono); font-size: 11px; color: var(--text-dim); }
+.cp-state {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 3px 8px;
+  border-radius: 3px;
+  border: 1px solid var(--rule-strong);
+  color: var(--text-dim);
+  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.cp-state-1 { color: var(--accent-bright); border-color: var(--accent-line); }
+.cp-state-2 { color: var(--med); border-color: var(--med); }
+.cp-state-3 { color: var(--paid); border-color: var(--paid); }
+
+.cp-poc {
+  font-family: var(--body);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  opacity: 0.8;
+  margin-bottom: 14px;
+}
+
+.cp-body { display: flex; align-items: center; gap: 16px; }
+.cp-seal { width: 108px; height: 108px; flex-shrink: 0; }
+.cp-seal-ring { fill: none; stroke: var(--crit); stroke-width: 1.6; opacity: 0.9; transition: stroke var(--dur) var(--ease); }
+.cp-seal-grade {
+  font-family: var(--display); font-weight: 800; font-size: 13px;
+  letter-spacing: 0.04em; fill: var(--crit); transition: fill var(--dur) var(--ease);
+}
+.cp-seal-state {
+  font-family: var(--mono); font-size: 8px; letter-spacing: 0.16em; fill: var(--text-dim);
+}
+.cp-seal-med .cp-seal-ring { stroke: var(--med); }
+.cp-seal-med .cp-seal-grade { fill: var(--med); }
+.cp-seal-on { animation: cpSealStrike 0.5s var(--ease) both; }
+@keyframes cpSealStrike {
+  0% { transform: scale(1.18) rotate(-4deg); opacity: 0.4; }
+  60% { transform: scale(0.97) rotate(1deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+
+.cp-verdict { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+/* Lines hold their space from the start and only fade in, so the card
+   keeps one steady size through the whole cycle. */
+.cp-line {
+  display: flex;
+  gap: 9px;
+  align-items: baseline;
+  opacity: 0;
+  transform: translateX(-6px);
+  transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+.cp-line-on { opacity: 1; transform: none; }
+.cp-k {
+  font-family: var(--mono); font-size: 9.5px; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--text-dim); flex-shrink: 0; min-width: 62px;
+}
+.cp-v { font-family: var(--body); font-size: 13px; line-height: 1.45; color: var(--text); opacity: 0.9; }
+.cp-paid { color: var(--paid); opacity: 1; font-weight: 600; }
+
+.cp-hash {
+  display: flex; gap: 9px; align-items: baseline;
+  margin-top: 14px; padding-top: 11px; border-top: 1px solid var(--rule);
+}
+/* room for the full hash at its longest wrap, reserved before typing starts */
+.cp-hash-slot { flex: 1; min-width: 0; min-height: 32px; display: block; }
+.cp-hash-text {
+  font-family: var(--mono); font-size: 10.5px; color: var(--text);
+  opacity: 0.75; word-break: break-all; line-height: 1.5;
+}
+.cp-hash-wait { font-family: var(--mono); font-size: 10.5px; color: var(--text-dim); letter-spacing: 0.04em; }
+.cp-caret {
+  display: inline-block; width: 6px; height: 12px; background: var(--accent-bright);
+  animation: cpBlink 0.9s step-end infinite; transform: translateY(1px);
+}
+@keyframes cpBlink { 50% { opacity: 0; } }
+
+.cp-rail { display: flex; align-items: center; flex-wrap: wrap; gap: 0; }
+.cp-rail-seg { display: flex; align-items: center; gap: 8px; }
+.cp-rail-dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--rule-strong); border: 1.5px solid var(--rule-strong);
+  flex-shrink: 0; transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.cp-rail-dot.cp-on { background: var(--accent); border-color: var(--accent); }
+.cp-rail-label {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.1em;
+  color: var(--text-dim); transition: color var(--dur) var(--ease);
+}
+.cp-rail-label.cp-on { color: var(--text); }
+.cp-rail-conn {
+  width: 26px; height: 1px; background: var(--rule-strong); margin: 0 10px;
+  transition: background var(--dur) var(--ease);
+}
+.cp-rail-conn.cp-on { background: var(--accent-line); }
+
+.lp-cta {
+  background: var(--accent);
+  color: var(--ground);
+  transition: background var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+}
+.lp-cta:hover { background: var(--accent-bright); opacity: 1; }
+.lp-cta:active { transform: translateY(1px); }
+.lp-bar-cta:hover { color: var(--accent-bright); }
+
+.lp-hero { grid-template-columns: 1.15fr 1fr; }
+.lp-hero-seal { width: 100%; }
+
+@media (max-width: 860px) {
+  .lp-hero { grid-template-columns: 1fr; }
+  .cp-seal { width: 88px; height: 88px; }
+  .cp-rail-conn { width: 14px; margin: 0 6px; }
+}
+@media (max-width: 560px) {
+  .cp-body { flex-direction: column; align-items: flex-start; gap: 12px; }
+  .cp-rail-label { font-size: 8.5px; letter-spacing: 0.06em; }
+  .cp-rail-conn { width: 8px; margin: 0 4px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cp-seal-on, .cp-caret { animation: none; }
+  .cp-line { transition: none; }
+  .cp-card, .cp-state, .cp-seal-ring, .cp-seal-grade,
+  .cp-rail-dot, .cp-rail-label, .cp-rail-conn, .lp-cta { transition: none; }
+}
+
+
+/* ============================================================
+   V3 pillar 3, phase B2: how it works, interactive outcomes,
+   the consensus visual, and the footer.
+   ============================================================ */
+
+.cp-card { min-height: 268px; }
+
+.lp-how { padding: 56px 0; border-bottom: 1px solid var(--rule-strong); }
+.lp-how-head {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 30px;
+  line-height: 1.12;
+  color: var(--text);
+  margin: 22px 0 30px;
+}
+.lp-how-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+.lp-how-step { border-top: 2px solid var(--accent-line); padding-top: 16px; }
+.lp-how-n {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--accent-bright);
+}
+.lp-how-t {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 17px;
+  color: var(--text);
+  margin: 10px 0 8px;
+}
+.lp-how-d {
+  font-family: var(--body);
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--text);
+  opacity: 0.82;
+}
+
+.lp-out-cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+.lp-out-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--rule-strong);
+  border-left: 2px solid var(--rule-strong);
+  border-radius: 4px;
+  padding: 18px 20px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+.lp-out-card:hover { background: var(--surface-2); transform: translateY(-2px); }
+.lp-out-card:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 2px; }
+.lp-out-card .lp-out-def {
+  font-family: var(--body);
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--text);
+  opacity: 0.85;
+}
+.lp-out-detail {
+  font-family: var(--body);
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text-dim);
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height var(--dur) var(--ease), opacity var(--dur) var(--ease);
+}
+.lp-out-card.is-open .lp-out-detail { max-height: 160px; opacity: 1; }
+.lp-out-more {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-bright);
+  opacity: 0.85;
+}
+.lp-out-card.is-open { border-left-color: var(--accent); }
+
+.lp-consensus {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+  margin-top: 34px;
+  padding-top: 26px;
+  border-top: 1px solid var(--rule);
+  flex-wrap: wrap;
+}
+.cn { width: 260px; height: 160px; flex-shrink: 0; }
+.cn-link { stroke: var(--accent-line); stroke-width: 1; opacity: 0.5; }
+.cn-node { fill: var(--accent); opacity: 0.85; }
+.cn-hub { fill: none; stroke: var(--paid); stroke-width: 1.4; }
+.cn-hub-text {
+  font-family: var(--mono); font-size: 8px; letter-spacing: 0.14em; fill: var(--paid);
+}
+.lp-consensus-note {
+  font-family: var(--body);
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--text);
+  opacity: 0.82;
+  max-width: 26em;
+}
+
+.lp-foot-links { display: flex; gap: 20px; flex-wrap: wrap; }
+
+@media (max-width: 860px) {
+  .lp-how-grid { grid-template-columns: 1fr; gap: 24px; }
+  .lp-out-cards { grid-template-columns: 1fr; }
+}
+@media (max-width: 560px) {
+  .lp-how-head { font-size: 24px; }
+  .cn { width: 100%; height: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-out-card, .lp-out-detail { transition: none; }
+  .lp-out-card:hover { transform: none; }
+}

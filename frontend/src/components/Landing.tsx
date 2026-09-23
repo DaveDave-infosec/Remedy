@@ -1,12 +1,64 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import "./Landing.css";
+import { ClaimPipeline } from "./ClaimPipeline";
+import { ConsensusNodes } from "./ConsensusNodes";
+import { StatNum } from "./StatNum";
+import { useReveal } from "../lib/reveal";
 
-const SEAL_CYCLE = [
-  { grade: "CRITICAL", tone: "crit" },
-  { grade: "HIGH", tone: "high" },
-  { grade: "MEDIUM", tone: "med" },
-  { grade: "LOW", tone: "low" },
-  { grade: "CRITICAL", tone: "crit" },
+const OUTCOMES = [
+  {
+    key: "reward",
+    name: "REWARD",
+    def: "Credible and novel. The vault pays the bounty to the researcher.",
+    detail:
+      "The vault recomputes the payout from its own severity schedule, pays the researcher minus the protocol fee, and returns the claim bond.",
+  },
+  {
+    key: "reject",
+    name: "REJECT",
+    def: "Not credible on the evidence. No payout, with the reasoning on record.",
+    detail:
+      "Nothing leaves the pool. The claim bond is forfeited into the bounty pool, so filing against code that is already sound has a cost.",
+  },
+  {
+    key: "hold",
+    name: "HOLD FOR PATCH",
+    def: "Credible, with a fix attached. The reward escrows until the patch is verified.",
+    detail:
+      "The payout moves into escrow and the bond returns at once. Escrow releases only when a new commit-pinned artifact is judged fixed.",
+  },
+  {
+    key: "merge",
+    name: "MERGE DUPLICATE",
+    def: "Overlaps an earlier claim. The bounty splits by attribution, weighted to the first reporter.",
+    detail:
+      "Duplicate detection is scoped per target, so two claims on different contracts of one campaign are never merged. Both bonds return.",
+  },
+  {
+    key: "escalate",
+    name: "ESCALATE",
+    def: "A credible Critical on a flagged target. The campaign pauses for review.",
+    detail:
+      "No further claims settle until the project resumes the campaign. The bond returns, since the claim was found credible.",
+  },
+];
+
+const STEPS = [
+  {
+    n: "01",
+    t: "Open a campaign",
+    d: "A project locks a bounty pool against up to ten commit-pinned contracts and sets what each severity pays.",
+  },
+  {
+    n: "02",
+    t: "File a claim",
+    d: "A researcher names the target, writes the proof-of-concept, and locks a bond. Evidence is fixed at intake.",
+  },
+  {
+    n: "03",
+    t: "Consensus settles it",
+    d: "Validators read the pinned source, agree on an outcome and severity, and the vault pays from its own schedule.",
+  },
 ];
 
 type LandingProps = {
@@ -14,20 +66,8 @@ type LandingProps = {
 };
 
 export function Landing({ onEnter }: LandingProps) {
-  const [sealStep, setSealStep] = useState(0);
-
-  useEffect(() => {
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduce) {
-      setSealStep(SEAL_CYCLE.length - 1);
-      return;
-    }
-    if (sealStep >= SEAL_CYCLE.length - 1) return;
-    const t = setTimeout(() => setSealStep((s) => s + 1), sealStep === 0 ? 1200 : 480);
-    return () => clearTimeout(t);
-  }, [sealStep]);
-
-  const seal = SEAL_CYCLE[sealStep];
+  const [openOut, setOpenOut] = useState<string | null>(null);
+  useReveal([openOut]);
 
   return (
     <div className="lp">
@@ -42,6 +82,7 @@ export function Landing({ onEnter }: LandingProps) {
       </header>
 
       <section className="lp-hero">
+        <span className="ember-glow" aria-hidden="true" />
         <div className="lp-hero-copy">
           <div className="lp-eyebrow">CONSENSUS SECURITY SETTLEMENT</div>
           <h1 className="lp-headline">
@@ -61,73 +102,40 @@ export function Landing({ onEnter }: LandingProps) {
         </div>
 
         <div className="lp-hero-seal">
-          <svg
-            className={"lp-seal lp-seal-tone-" + seal.tone}
-            viewBox="0 0 200 200"
-            role="img"
-            aria-label={"Severity seal, " + seal.grade.toLowerCase() + ", sealed"}
-          >
-            <g className="lp-seal-strike">
-              <polygon
-                className="lp-seal-ring"
-                points="173.9,130.6 130.6,173.9 69.4,173.9 26.1,130.6 26.1,69.4 69.4,26.1 130.6,26.1 173.9,69.4"
-              />
-              <polygon
-                className="lp-seal-ring-inner"
-                points="161.0,125.2 125.2,161.0 74.8,161.0 39.0,125.2 39.0,74.8 74.8,39.0 125.2,39.0 161.0,74.8"
-              />
-              <text className="lp-seal-kicker" x="100" y="82" textAnchor="middle">
-                SEVERITY
-              </text>
-              <text className="lp-seal-grade" x="100" y="110" textAnchor="middle">
-                {seal.grade}
-              </text>
-              <text className="lp-seal-state" x="100" y="130" textAnchor="middle">
-                SEALED
-              </text>
-            </g>
-          </svg>
+          <ClaimPipeline />
         </div>
       </section>
 
-      <div className="lp-timeline" aria-label="Disclosure timeline">
-        <div className="lp-tl-node lp-tl-1">
-          <span className="lp-tl-dot" />
-          <span className="lp-tl-label">SUBMITTED</span>
-        </div>
-        <span className="lp-tl-conn lp-tl-conn-1" />
-        <div className="lp-tl-node lp-tl-2">
-          <span className="lp-tl-dot" />
-          <span className="lp-tl-label">VERIFIED</span>
-        </div>
-        <span className="lp-tl-conn lp-tl-conn-2" />
-        <div className="lp-tl-node lp-tl-3">
-          <span className="lp-tl-dot" />
-          <span className="lp-tl-label">SEALED</span>
-        </div>
-        <span className="lp-tl-conn lp-tl-conn-3" />
-        <div className="lp-tl-node lp-tl-4">
-          <span className="lp-tl-dot" />
-          <span className="lp-tl-label">SETTLED</span>
-        </div>
-      </div>
-
-      <div className="lp-stats">
+      <div className="lp-stats reveal">
         <div className="lp-stat">
-          <span className="lp-stat-num">5</span>
+          <StatNum value={5} />
           <span className="lp-stat-label">settlement outcomes</span>
         </div>
         <div className="lp-stat lp-stat-sage">
-          <span className="lp-stat-num">0</span>
+          <StatNum value={0} />
           <span className="lp-stat-label">trusted humans in the loop</span>
         </div>
         <div className="lp-stat">
-          <span className="lp-stat-num">100%</span>
+          <StatNum value={100} suffix="%" />
           <span className="lp-stat-label">verdicts on-chain</span>
         </div>
       </div>
 
-      <section className="lp-dissent">
+      <section className="lp-how reveal">
+        <div className="lp-eyebrow">HOW IT WORKS</div>
+        <h2 className="lp-how-head">Three moves, and no one to ask.</h2>
+        <div className="lp-how-grid">
+          {STEPS.map((st) => (
+            <div key={st.n} className="lp-how-step">
+              <span className="lp-how-n">{st.n}</span>
+              <h3 className="lp-how-t">{st.t}</h3>
+              <p className="lp-how-d">{st.d}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="lp-dissent reveal">
         <div className="lp-dissent-copy">
           <div className="lp-eyebrow">MINORITY ON THE RECORD</div>
           <h2 className="lp-dissent-head">
@@ -163,7 +171,7 @@ export function Landing({ onEnter }: LandingProps) {
         </div>
       </section>
 
-      <section className="lp-problem">
+      <section className="lp-problem reveal">
         <div className="lp-eyebrow">THE PROBLEM</div>
         <h2 className="lp-problem-head">
           A bounty runs on trust. That is the vulnerability.
@@ -207,7 +215,7 @@ export function Landing({ onEnter }: LandingProps) {
         </p>
       </section>
 
-      <section className="lp-outcomes">
+      <section className="lp-outcomes reveal">
         <div className="lp-eyebrow">SETTLEMENT OUTCOMES</div>
         <h2 className="lp-outcomes-head">
           Five ways a claim can settle. The consensus picks one.
@@ -217,58 +225,37 @@ export function Landing({ onEnter }: LandingProps) {
           evidence; the vault applies it with no human in between.
         </p>
 
-        <div className="lp-outcomes-register">
-          <div className="lp-out-row lp-out-reward">
-            <span className="lp-out-idx">01</span>
-            <div className="lp-out-main">
-              <span className="lp-out-name">REWARD</span>
-              <span className="lp-out-def">
-                Credible and novel. The vault pays the bounty to the researcher.
-              </span>
-            </div>
-          </div>
-          <div className="lp-out-row lp-out-reject">
-            <span className="lp-out-idx">02</span>
-            <div className="lp-out-main">
-              <span className="lp-out-name">REJECT</span>
-              <span className="lp-out-def">
-                Not credible on the evidence. No payout, with the reasoning on record.
-              </span>
-            </div>
-          </div>
-          <div className="lp-out-row lp-out-hold">
-            <span className="lp-out-idx">03</span>
-            <div className="lp-out-main">
-              <span className="lp-out-name">HOLD FOR PATCH</span>
-              <span className="lp-out-def">
-                Credible, with a fix attached. The reward escrows until the patch is
-                verified.
-              </span>
-            </div>
-          </div>
-          <div className="lp-out-row lp-out-merge">
-            <span className="lp-out-idx">04</span>
-            <div className="lp-out-main">
-              <span className="lp-out-name">MERGE DUPLICATE</span>
-              <span className="lp-out-def">
-                Overlaps an earlier claim. The bounty splits by attribution, weighted to
-                the first reporter.
-              </span>
-            </div>
-          </div>
-          <div className="lp-out-row lp-out-escalate">
-            <span className="lp-out-idx">05</span>
-            <div className="lp-out-main">
-              <span className="lp-out-name">ESCALATE</span>
-              <span className="lp-out-def">
-                A credible Critical on a flagged target. The campaign pauses for review.
-              </span>
-            </div>
-          </div>
+        <div className="lp-out-cards">
+          {OUTCOMES.map((o, i) => {
+            const open = openOut === o.key;
+            return (
+              <button
+                key={o.key}
+                type="button"
+                className={"lp-out-card lp-out-" + o.key + (open ? " is-open" : "")}
+                onClick={() => setOpenOut(open ? null : o.key)}
+                aria-expanded={open}
+              >
+                <span className="lp-out-idx">{String(i + 1).padStart(2, "0")}</span>
+                <span className="lp-out-name">{o.name}</span>
+                <span className="lp-out-def">{o.def}</span>
+                <span className="lp-out-detail">{o.detail}</span>
+                <span className="lp-out-more">{open ? "less" : "what the vault does"}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="lp-consensus">
+          <ConsensusNodes />
+          <p className="lp-consensus-note">
+            Five validators read the same pinned source and converge on one verdict,
+            with the strongest dissent recorded beside it.
+          </p>
         </div>
       </section>
 
-      <section className="lp-proof">
+      <section className="lp-proof reveal">
         <div className="lp-eyebrow">THE PROOF</div>
         <h2 className="lp-proof-head">
           A stranger settled a bounty. Here is the receipt.
@@ -319,7 +306,7 @@ export function Landing({ onEnter }: LandingProps) {
         </div>
       </section>
 
-      <section className="lp-vulns">
+      <section className="lp-vulns reveal">
         <div className="lp-eyebrow">TESTED ACROSS VULN CLASSES</div>
         <h2 className="lp-vulns-head">It reasons. It does not pattern-match.</h2>
         <p className="lp-vulns-lead">
@@ -370,7 +357,7 @@ export function Landing({ onEnter }: LandingProps) {
         </div>
       </section>
 
-      <section className="lp-close">
+      <section className="lp-close reveal">
         <div className="lp-close-inner">
           <div className="lp-eyebrow">RUN A CLAIM YOURSELF</div>
           <h2 className="lp-close-head">
@@ -395,15 +382,41 @@ export function Landing({ onEnter }: LandingProps) {
           <span className="lp-foot-brand">REMEDY</span>
           <span className="lp-foot-meta">GenLayer Studio Network / chainId 61999</span>
         </div>
-        
+
+        <div className="lp-foot-links">
           <a
-          className="lp-foot-link"
-          href="https://github.com/DaveDave-infosec/Remedy"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          GitHub &rarr;
-        </a>
+            className="lp-foot-link"
+            href="https://github.com/DaveDave-infosec/Remedy"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            GitHub &rarr;
+          </a>
+          <a
+            className="lp-foot-link"
+            href="https://github.com/DaveDave-infosec/Remedy/blob/main/TESTING.md"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Test map &rarr;
+          </a>
+          <a
+            className="lp-foot-link"
+            href="https://explorer-studio.genlayer.com/address/0x60c5C00b46a0845A11E5a1D5Cf22a1607E55e994"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Vault &rarr;
+          </a>
+          <a
+            className="lp-foot-link"
+            href="https://explorer-studio.genlayer.com/address/0x4712c4165eFaf8CCd8F0371E7821ed729c872569"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Verifier &rarr;
+          </a>
+        </div>
       </footer>
     </div>
   );
