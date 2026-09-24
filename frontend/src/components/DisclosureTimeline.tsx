@@ -32,7 +32,7 @@ function buildNodes(status: string, outcome: string, severity: string): Node[] {
       done("Submitted"),
       done("Reviewed"),
       { label: "Not credible", state: "done", tone: "void" },
-      { label: "Dismissed", state: "done", tone: "void" },
+      { label: "Rejected", state: "done", tone: "void" },
     ];
   }
 

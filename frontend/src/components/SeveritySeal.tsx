@@ -33,9 +33,13 @@ export function SeveritySeal({
   size?: number;
 }) {
   const state: SealState = status === "open" ? "pending" : "struck";
-  const isVoid = outcome === "Reject" || outcome === "Dismissed";
+  // A rejected claim was judged and found not credible. A dismissed one was
+  // withdrawn before any verdict. They are different endings and must read so.
+  const isReject = outcome === "Reject";
+  const isDismissed = outcome === "Dismissed";
+  const isVoid = isReject || isDismissed;
   const color = isVoid ? "#8A8F94" : sevColor(severity);
-  const label = isVoid ? "VOID" : sevLabel(severity);
+  const label = isReject ? "NULL" : isDismissed ? "VOID" : sevLabel(severity);
 
   const outer = "-40,-16 -16,-40 16,-40 40,-16 40,16 16,40 -16,40 -40,16";
   const inner = "-31,-12.5 -12.5,-31 12.5,-31 31,-12.5 31,12.5 12.5,31 -12.5,31 -31,12.5";
@@ -111,7 +115,7 @@ export function SeveritySeal({
             letterSpacing="1"
             textAnchor="middle"
           >
-            {isVoid ? "DISMISSED" : "SEALED"}
+            {isReject ? "REJECTED" : isDismissed ? "WITHDRAWN" : "SEALED"}
           </text>
         </>
       )}

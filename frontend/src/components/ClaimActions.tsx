@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   runReview,
   getVerdict,
@@ -8,6 +8,7 @@ import {
   verifyFix,
   releaseEscrow,
   refundEscrow,
+  getFixResult,
 } from "../lib/contracts";
 import { PhaseLadder } from "./PhaseLadder";
 
@@ -70,6 +71,28 @@ export function ClaimActions({
   const [submittingFix, setSubmittingFix] = useState(false);
   const [patchedUrl, setPatchedUrl] = useState("");
   const [confirmDismiss, setConfirmDismiss] = useState(false);
+  const [fix, setFix] = useState<{ checked: boolean; fixed: boolean; reasoning: string; source_hash: string } | null>(null);
+
+  // A held claim's fix verdict lives on the verifier, keyed by the submitted
+  // artifact. It was landing silently before; read it so the card can show it.
+  const submittedUrl = (claim as any).patched_url as string | undefined;
+  useEffect(() => {
+    let live = true;
+    if (claim.status !== "held" || !submittedUrl) {
+      setFix(null);
+      return;
+    }
+    getFixResult(submittedUrl)
+      .then((r) => {
+        if (live && r) setFix(r as any);
+      })
+      .catch(() => {
+        /* the verdict is informational here; a failed read must not block the card */
+      });
+    return () => {
+      live = false;
+    };
+  }, [claim.status, submittedUrl, verifying, releasing]);
 
   async function doSubmitFix() {
     setErr(null);
@@ -339,6 +362,21 @@ export function ClaimActions({
               fixed contract, then Verify fix judges that artifact.
             </div>
           )}
+          {fix && fix.checked && (
+            <div className={"fix-verdict" + (fix.fixed ? " fix-ok" : " fix-no")}>
+              <div className="fix-verdict-head">
+                <span className="fix-tag">{fix.fixed ? "FIX VERIFIED" : "NOT FIXED"}</span>
+                <span className="fix-hash mono">{fix.source_hash.slice(0, 16)}</span>
+              </div>
+              <p className="fix-reason">{fix.reasoning}</p>
+              <p className="fix-foot">
+                {fix.fixed
+                  ? "Escrow can be released to the submitter. This verdict is bound to the submitted artifact and cannot be overwritten."
+                  : "Escrow stays held. Submit a different commit-pinned artifact to be judged; this one keeps its verdict."}
+              </p>
+            </div>
+          )}
+
           <div className="fix-submit-row">
             <input
               className="fix-url-input mono"

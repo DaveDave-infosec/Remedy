@@ -505,26 +505,256 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   box-shadow: var(--shadow-2);
 }
 
-.bar {
+/* the campaign progress meter. Deliberately NOT called .bar: the app's wallet
+   bar is <section className="bar"> and a generic rule here would crush it. */
+.meter {
   height: 6px;
   border-radius: 3px;
   background: var(--rule);
   overflow: hidden;
   display: flex;
 }
-.bar span {
+.meter span {
   display: block;
   height: 100%;
   transition: width var(--dur-slow) var(--ease);
 }
-.bar .bar-pool { background: var(--accent); }
-.bar .bar-escrow { background: var(--escrow); }
-.bar .bar-paid { background: var(--paid); }
+.meter .meter-pool { background: var(--accent); }
+.meter .meter-escrow { background: var(--escrow); }
+.meter .meter-paid { background: var(--paid); }
 
 @media (prefers-reduced-motion: reduce) {
   .reveal { opacity: 1; transform: none; transition: none; }
   .lift { transition: none; }
   .lift:hover { transform: none; }
-  .bar span { transition: none; }
+  .meter span { transition: none; }
   .btn-accent { transition: none; }
+}
+
+
+/* ============================================================
+   V3 pillar 3, phase C1: the protocol UI.
+   Dashboard figures, campaign cards with a pool bar, a two-column
+   layout, and empty states that explain rather than apologise.
+   ============================================================ */
+
+.protocol-grid {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr;
+  gap: 18px;
+  align-items: start;
+}
+/* The form is taller than this panel, so rather than leave a tall empty box,
+   the explainer follows the reader down while they fill the form. */
+.side-note {
+  align-self: start;
+  position: sticky;
+  top: 20px;
+}
+@media (max-width: 900px) {
+  .side-note { position: static; }
+}
+.side-note h3 {
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+.side-step {
+  display: grid;
+  grid-template-columns: 26px 1fr;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.side-step:last-of-type { border-bottom: none; }
+.side-n {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--accent-bright);
+  letter-spacing: 0.08em;
+}
+.side-t {
+  font-family: var(--body);
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text);
+  opacity: 0.86;
+}
+.side-foot {
+  font-family: var(--body);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-dim);
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule);
+}
+
+.dash {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  padding: 16px 0 20px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--rule);
+}
+.dash-stat { display: flex; flex-direction: column; gap: 5px; }
+.dash-num {
+  font-family: var(--mono);
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--text);
+}
+.dash-label {
+  font-family: var(--body);
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.dash-escrow .dash-num { color: var(--escrow); }
+.dash-paid .dash-num { color: var(--paid); }
+
+.cam-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+.cam-card {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--rule-strong);
+  border-radius: 4px;
+  padding: 16px 18px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.cam-card:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 2px; }
+.cam-card-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cam-target {
+  font-size: 12px;
+  color: var(--text-dim);
+  word-break: break-all;
+  line-height: 1.45;
+}
+.cam-figs { display: flex; flex-wrap: wrap; gap: 14px; }
+.cam-fig {
+  font-family: var(--body);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.cam-fig-n {
+  font-family: var(--mono);
+  font-style: normal;
+  font-size: 13px;
+  color: var(--text);
+  margin-right: 4px;
+}
+.cam-fig-escrow .cam-fig-n { color: var(--escrow); }
+.cam-fig-paid .cam-fig-n { color: var(--paid); }
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 30px 0 14px;
+}
+.empty-mark { display: flex; gap: 7px; margin-bottom: 4px; }
+.empty-mark span {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid var(--accent-line);
+}
+.empty-mark span:nth-child(2) { border-color: var(--rule-strong); }
+.empty-mark span:nth-child(3) { border-color: var(--rule-strong); }
+.empty-head {
+  font-family: var(--display);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+.empty-body {
+  font-family: var(--body);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-dim);
+  max-width: 44em;
+}
+
+.gate { display: grid; grid-template-columns: 1.1fr 1fr; gap: 18px; align-items: start; }
+.gate-head {
+  font-family: var(--display);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+.gate-body {
+  font-family: var(--body);
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text);
+  opacity: 0.86;
+  margin-bottom: 18px;
+}
+.gate-list { display: flex; flex-direction: column; gap: 10px; }
+.gate-item {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 10px;
+  font-family: var(--body);
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+.gate-k { font-family: var(--mono); font-size: 11px; color: var(--accent-bright); }
+
+@media (max-width: 900px) {
+  .protocol-grid { grid-template-columns: 1fr; }
+  .gate { grid-template-columns: 1fr; }
+  .dash { grid-template-columns: repeat(2, 1fr); }
+  .cam-grid { grid-template-columns: 1fr; }
+}
+
+
+/* V3 pillar 3, phase C2: the fix verdict on a held claim. */
+.fix-verdict {
+  border: 1px solid var(--rule-strong);
+  border-left: 2px solid var(--escrow);
+  border-radius: 4px;
+  background: var(--surface-2);
+  padding: 13px 15px;
+  margin: 12px 0;
+}
+.fix-ok { border-left-color: var(--paid); }
+.fix-no { border-left-color: var(--crit); }
+.fix-verdict-head { display: flex; align-items: center; gap: 10px; margin-bottom: 9px; flex-wrap: wrap; }
+.fix-tag {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 3px 8px;
+  border-radius: 3px;
+  border: 1px solid;
+}
+.fix-ok .fix-tag { color: var(--paid); border-color: var(--paid); }
+.fix-no .fix-tag { color: var(--crit); border-color: var(--crit); }
+.fix-hash { font-size: 11px; color: var(--text-dim); margin-left: auto; }
+.fix-reason {
+  font-family: var(--body);
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text);
+  opacity: 0.9;
+  margin-bottom: 8px;
+}
+.fix-foot {
+  font-family: var(--body);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
 }

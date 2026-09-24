@@ -183,18 +183,69 @@ export default function App() {
               />
             ) : (
               <>
-                <OpenCampaign account={address} balance={balance} disabled={loading || minting} onOpened={bumpRefresh} />
+                <div className="protocol-grid">
+                  <OpenCampaign account={address} balance={balance} disabled={loading || minting} onOpened={bumpRefresh} />
+                  <aside className="panel side-note">
+                    <h3>What a campaign does</h3>
+                    <div className="side-step">
+                      <span className="side-n">01</span>
+                      <span className="side-t">
+                        Your pool is locked in the vault. Nothing pays out unless consensus
+                        says so.
+                      </span>
+                    </div>
+                    <div className="side-step">
+                      <span className="side-n">02</span>
+                      <span className="side-t">
+                        Every target is pinned to a commit, so the code judged cannot change
+                        after a claim is filed.
+                      </span>
+                    </div>
+                    <div className="side-step">
+                      <span className="side-n">03</span>
+                      <span className="side-t">
+                        Each claim locks a bond. It returns on any credible outcome and is
+                        forfeited to your pool on Reject.
+                      </span>
+                    </div>
+                    <p className="side-foot">
+                      Settlement is permissionless: anyone can trigger it, and the vault
+                      recomputes the payout from your own schedule.
+                    </p>
+                  </aside>
+                </div>
                 <CampaignList refreshKey={refreshKey} onSelect={(id) => setSelected(id)} />
               </>
             )
           ) : (
             <div className="panel">
-              <h2>Connect to begin</h2>
-              <p className="hint">
-                Connect MetaMask for real signed transactions, or use Demo mode for a
-                throwaway burner wallet. New here? Open the Guide tab, then click Get
-                test faucet for funds.
-              </p>
+              <div className="gate">
+                <div>
+                  <h2 className="gate-head">Connect to begin</h2>
+                  <p className="gate-body">
+                    Open a campaign, file a claim, run the review, and settle it. The whole
+                    loop runs on-chain, and nothing here needs real funds.
+                  </p>
+                </div>
+                <div className="gate-list">
+                  <div className="gate-item">
+                    <span className="gate-k">01</span>
+                    <span>
+                      Demo mode gives you a throwaway wallet and a faucet. Nothing to install.
+                    </span>
+                  </div>
+                  <div className="gate-item">
+                    <span className="gate-k">02</span>
+                    <span>
+                      MetaMask signs real transactions on the GenLayer Studio network.
+                    </span>
+                  </div>
+                  <div className="gate-item">
+                    <span className="gate-k">03</span>
+                    <span>New here? The Guide tab walks the full loop end to end.</span>
+                  </div>
+                </div>
+              </div>
             </div>
           ))}
       </main>
