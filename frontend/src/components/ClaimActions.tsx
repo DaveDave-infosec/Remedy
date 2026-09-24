@@ -9,6 +9,7 @@ import {
   releaseEscrow,
   refundEscrow,
   getFixResult,
+  getCaseForClaim,
 } from "../lib/contracts";
 import { PhaseLadder } from "./PhaseLadder";
 
@@ -75,6 +76,26 @@ export function ClaimActions({
 
   // A held claim's fix verdict lives on the verifier, keyed by the submitted
   // artifact. It was landing silently before; read it so the card can show it.
+  // A verdict lives on-chain, but this component only held it in memory from the
+  // review flow. After a page refresh a reviewed claim looked unreviewed, and
+  // running the review again only reverts. So ask the verifier on mount.
+  useEffect(() => {
+    let live = true;
+    if (claim.status !== "open") return;
+    getCaseForClaim(claim.claim_id)
+      .then(async (caseId) => {
+        if (!live || !caseId) return;
+        const v = await getVerdict(caseId);
+        if (live && v && v.case_id) setVerdict(v as Verdict);
+      })
+      .catch(() => {
+        /* a missing verdict is the normal case; the card stays reviewable */
+      });
+    return () => {
+      live = false;
+    };
+  }, [claim.claim_id, claim.status]);
+
   const submittedUrl = (claim as any).patched_url as string | undefined;
   useEffect(() => {
     let live = true;
