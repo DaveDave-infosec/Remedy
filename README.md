@@ -78,6 +78,27 @@ Explorer:
 
 Frontend: React + TypeScript + Vite + genlayer-js, deployed on Vercel. Wallet support is MetaMask plus a demo burner fallback.
 
+## The app
+
+The app is the protocol, not a brochure for it. Everything below is read from the
+two contracts at the addresses above; nothing is mocked.
+
+- The landing page runs a real claim through the settlement path: the severity
+  seal flips from the researcher's claimed grade to the one consensus assigned,
+  the minority note appears beside it, and the settlement hash types itself out.
+- Opening a campaign takes a set of commit-pinned targets, a pool, and the claim
+  bond. The severity schedule is set per campaign and is what the vault pays from.
+- The campaign view carries live figures for every pool: locked, held in escrow,
+  and paid to researchers, with a meter on each campaign card showing the split.
+- Each claim card shows its target, its bond state (locked, returned, or
+  forfeited to the pool), the submitter's on-chain record, the consensus verdict
+  with its reasoning, and the minority view recorded beside it.
+- A held claim takes a new commit-pinned patched artifact, and once consensus has
+  judged that artifact the card shows the fix verdict, bound to the sha256 of the
+  exact bytes judged, with the escrow released only when it reads as fixed.
+- Demo mode gives a throwaway wallet and a faucet, so the full loop can be driven
+  without MetaMask or anything of value.
+
 ## Tested
 
 **Contract test suite.** 38 tests run the real contract code on GenLayer's `gltest` direct runner, with no skips; only the other contract's replies and the model verdict are mocked. [TESTING.md](TESTING.md) maps every test to the guarantee it proves.
