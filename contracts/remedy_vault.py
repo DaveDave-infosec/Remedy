@@ -434,6 +434,14 @@ class RemedyVault(gl.Contract):
             return "Reject"
 
         if outcome == "Escalate":
+            # Escalate pauses the whole campaign, so it is only available where the
+            # project flagged the campaign critical. A verdict that escalates a
+            # campaign which is not flagged is refused, not applied.
+            if not self.cam_is_critical_target[campaign_id]:
+                raise gl.vm.UserError(
+                    "this campaign is not a predefined critical target, so it cannot "
+                    "be escalated; settlement refused"
+                )
             self.cl_outcome[claim_id] = "Escalate"
             self.cl_status[claim_id] = "escalated"
             self.cam_status[campaign_id] = "paused"
@@ -479,6 +487,20 @@ class RemedyVault(gl.Contract):
             original_claim_id = self._find_claim_by_seq(campaign_id, dup_seq)
             if original_claim_id == "" or original_claim_id == claim_id:
                 raise gl.vm.UserError("original claim for merge not found")
+            # A duplicate must point BACKWARD at an earlier claim, and dedup is
+            # scoped per target, so the original must sit on the same target.
+            if dup_seq >= int(self.cl_seq[claim_id]):
+                raise gl.vm.UserError(
+                    "a duplicate must reference an EARLIER claim; the named claim is "
+                    "not earlier than this one"
+                )
+            this_idx = int(self.cl_target_index[claim_id]) if claim_id in self.cl_target_index else 0
+            orig_idx = int(self.cl_target_index[original_claim_id]) if original_claim_id in self.cl_target_index else 0
+            if orig_idx != this_idx:
+                raise gl.vm.UserError(
+                    "a duplicate must reference a claim on the SAME target; the named "
+                    "claim is filed against a different contract"
+                )
             o_bps = int(v["original_bps"])
             d_bps = int(v["duplicate_bps"])
             if o_bps + d_bps != 10000:
@@ -572,7 +594,7 @@ class RemedyVault(gl.Contract):
         if patched_url == "":
             raise gl.vm.UserError("no patched artifact submitted; run submit_fix first")
         vf = gl.get_contract_at(self.verifier)
-        fix = vf.view().get_fix_result(patched_url)
+        fix = vf.view().get_fix_result(claim_id, patched_url)
         if not fix or "checked" not in fix:
             raise gl.vm.UserError("verifier returned no fix result")
         if not bool(fix["checked"]):
@@ -615,7 +637,7 @@ class RemedyVault(gl.Contract):
         patched_url = self.cl_patched_url[claim_id] if claim_id in self.cl_patched_url else ""
         if patched_url != "":
             vf = gl.get_contract_at(self.verifier)
-            fix = vf.view().get_fix_result(patched_url)
+            fix = vf.view().get_fix_result(claim_id, patched_url)
             if fix and "checked" in fix and bool(fix["checked"]) and bool(fix["fixed"]):
                 raise gl.vm.UserError("fix is verified; escrow must be released to the submitter")
 

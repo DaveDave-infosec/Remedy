@@ -41,7 +41,7 @@ def test_verify_fix_against_unchanged_original_is_not_fixed(direct_vm, direct_de
     direct_vm.mock_web(re.escape(C.PINNED), {"method": "GET", "status": 200, "body": ORIGINAL_SRC})
     direct_vm.sender = Address(C.BYSTNDR)
     assert v.verify_fix("clm_0") is False
-    fr = v.get_fix_result(C.PINNED)
+    fr = v.get_fix_result("clm_0", C.PINNED)
     assert fr["checked"] and not fr["fixed"]
     print("VERIFY-FIX vs UNCHANGED ORIGINAL => not fixed OK")
 
@@ -52,7 +52,7 @@ def test_verify_fix_against_distinct_patched_artifact_is_fixed(direct_vm, direct
     direct_vm.mock_web(re.escape(C.PATCHED), {"method": "GET", "status": 200, "body": PATCHED_SRC})
     direct_vm.sender = Address(C.BYSTNDR)
     assert v.verify_fix("clm_0") is True
-    fr = v.get_fix_result(C.PATCHED)
+    fr = v.get_fix_result("clm_0", C.PATCHED)
     assert fr["checked"] and fr["fixed"]
     assert fr["source_hash"] == hashlib.sha256(PATCHED_SRC.encode("utf-8")).hexdigest()
     print("VERIFY-FIX vs DISTINCT PATCHED ARTIFACT => fixed, hash-bound OK")
@@ -78,8 +78,8 @@ def test_distinct_artifact_gets_fresh_verdict_prior_stays_immutable(direct_vm, d
     assert v.verify_fix("clm_0") is False
     direct_vm._gl_call_hook = C.make_hook({"get_claim": _claim(C.PATCHED)}, prompt=FIXED)
     assert v.verify_fix("clm_0") is True
-    assert v.get_fix_result(C.PATCHED)["fixed"] is True
-    assert v.get_fix_result(C.PINNED)["fixed"] is False
+    assert v.get_fix_result("clm_0", C.PATCHED)["fixed"] is True
+    assert v.get_fix_result("clm_0", C.PINNED)["fixed"] is False
     print("DISTINCT ARTIFACT => fresh verdict, prior stays immutable OK")
 
 

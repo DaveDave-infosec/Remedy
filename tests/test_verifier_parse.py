@@ -95,7 +95,7 @@ def test_verify_fix_fenced_answer_is_parsed(direct_vm, direct_deploy):
     fenced = "```json\n" + json.dumps({"fixed": True, "reasoning": "require(ok) added"}) + "\n```"
     v = _setup(direct_vm, direct_deploy, fenced, patched=C.PATCHED)
     assert v.verify_fix("clm_0") is True
-    r = v.get_fix_result(C.PATCHED)
+    r = v.get_fix_result("clm_0", C.PATCHED)
     assert r["checked"] is True and r["fixed"] is True
 
 
@@ -104,5 +104,5 @@ def test_verify_fix_string_false_is_not_fixed(direct_vm, direct_deploy):
     answer = json.dumps({"fixed": "false", "reasoning": "the check is still missing"})
     v = _setup(direct_vm, direct_deploy, answer, patched=C.PATCHED)
     assert v.verify_fix("clm_0") is False
-    r = v.get_fix_result(C.PATCHED)
+    r = v.get_fix_result("clm_0", C.PATCHED)
     assert r["checked"] is True and r["fixed"] is False

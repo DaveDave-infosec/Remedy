@@ -103,7 +103,7 @@ export function ClaimActions({
       setFix(null);
       return;
     }
-    getFixResult(submittedUrl)
+    getFixResult(claim.claim_id, submittedUrl)
       .then((r) => {
         if (live && r) setFix(r as any);
       })
@@ -113,7 +113,7 @@ export function ClaimActions({
     return () => {
       live = false;
     };
-  }, [claim.status, submittedUrl, verifying, releasing]);
+  }, [claim.claim_id, claim.status, submittedUrl, verifying, releasing]);
 
   async function doSubmitFix() {
     setErr(null);

@@ -1,4 +1,4 @@
-Expected: `38 passed`.
+Expected: `43 passed`.
 
 ## What each test proves
 
@@ -150,6 +150,31 @@ not on their author.
 - `tests/test_bond_reputation.py::test_project_dismiss_returns_bond_to_researcher`:
   when the project dismisses an unreviewed claim, the bond goes back to the
   researcher and the project gains nothing.
+
+### Settlement bindings (steward round)
+
+Three bindings that a verdict alone must never be trusted to get right: a fix
+verdict belongs to one claim judging one artifact, a duplicate must point
+backward at a claim on the same target, and a campaign can only be escalated if
+the project flagged it critical. Each is enforced in the vault or the verifier,
+not in the prompt.
+
+- `tests/test_steward_binding.py::test_fix_verdict_is_per_claim_not_per_artifact`:
+  a fix verdict is keyed by claim and artifact together, so a second claim that
+  submits the same artifact has no verdict until it is judged on its own, and a
+  repeat for the same pair is still refused.
+- `tests/test_steward_binding.py::test_release_refuses_another_claims_verdict`: a
+  held claim cannot release escrow on a fix verdict produced for a different
+  claim, even when both submitted the identical artifact.
+- `tests/test_steward_binding.py::test_merge_refuses_a_later_claim_as_the_original`:
+  a duplicate that names a LATER claim as its original is refused, so merge
+  attribution cannot run backward.
+- `tests/test_steward_binding.py::test_merge_refuses_an_original_on_another_target`:
+  a duplicate that names a claim on a different target is refused, since
+  duplicate detection is scoped per target.
+- `tests/test_steward_binding.py::test_escalate_refused_on_a_non_critical_campaign`:
+  an Escalate verdict against a campaign that is not flagged critical is refused,
+  the campaign stays active, and the claim stays open.
 
 ## Harness note
 

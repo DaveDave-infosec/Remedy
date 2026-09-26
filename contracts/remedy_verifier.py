@@ -12,6 +12,13 @@ OVERSIZE_SENTINEL = "__REMEDY_SOURCE_OVERSIZE__"
 VALID_OUTCOMES = ("Reward", "Reject", "HoldForPatch", "Escalate", "MergeDuplicate")
 
 
+# A fix verdict belongs to ONE claim judging ONE artifact. Keying by the artifact
+# alone would let a second claim inherit a verdict produced for the first, so the
+# key binds both.
+def fix_key(claim_id: str, patched_url: str) -> str:
+    return claim_id + "|" + patched_url
+
+
 # V3 hardening: the consensus answer may arrive wrapped in a markdown code fence
 # or with text around it. Extract the single JSON object deterministically
 # (outside any nondeterministic block) instead of trusting bare JSON.
@@ -327,8 +334,11 @@ class RemedyVerifier(gl.Contract):
         patched_url = str(claim["patched_url"]) if "patched_url" in claim else ""
         if patched_url == "":
             raise gl.vm.UserError("no patched artifact submitted for this claim")
-        if patched_url in self.fix_checked and self.fix_checked[patched_url]:
-            raise gl.vm.UserError("this patched artifact already has a fix verdict")
+        key = fix_key(claim_id, patched_url)
+        if key in self.fix_checked and self.fix_checked[key]:
+            raise gl.vm.UserError(
+                "this claim already has a fix verdict for this artifact"
+            )
 
         local_poc = str(claim["poc_text"])
         local_url = patched_url
@@ -404,10 +414,10 @@ class RemedyVerifier(gl.Contract):
             )
         reasoning = str(parsed["reasoning"])
 
-        self.fix_checked[patched_url] = True
-        self.fix_verified[patched_url] = fixed
-        self.fix_reasoning[patched_url] = reasoning
-        self.fix_source_hash[patched_url] = local_fix_hash
+        self.fix_checked[key] = True
+        self.fix_verified[key] = fixed
+        self.fix_reasoning[key] = reasoning
+        self.fix_source_hash[key] = local_fix_hash
         return fixed
 
     # ---------- views ----------
@@ -438,14 +448,15 @@ class RemedyVerifier(gl.Contract):
         return self.case_for_claim[claim_id] if claim_id in self.case_for_claim else ""
 
     @gl.public.view
-    def get_fix_result(self, patched_url: str) -> dict:
-        if patched_url not in self.fix_checked:
+    def get_fix_result(self, claim_id: str, patched_url: str) -> dict:
+        key = fix_key(claim_id, patched_url)
+        if key not in self.fix_checked:
             return {"checked": False, "fixed": False, "reasoning": "", "source_hash": ""}
         return {
             "checked": True,
-            "fixed": self.fix_verified[patched_url],
-            "reasoning": self.fix_reasoning[patched_url],
-            "source_hash": self.fix_source_hash[patched_url] if patched_url in self.fix_source_hash else "",
+            "fixed": self.fix_verified[key],
+            "reasoning": self.fix_reasoning[key],
+            "source_hash": self.fix_source_hash[key] if key in self.fix_source_hash else "",
         }
 
     @gl.public.view

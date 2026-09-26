@@ -50,6 +50,9 @@ Receipt: https://explorer-studio.genlayer.com/tx/0xee0e886feebf45b6de68f00bc18a6
 - **One review per claim.** A claim gets exactly one authorized review. A second `run_review` reverts, so nobody can shop for a better verdict.
 - **Verdict-bound claims cannot be dismissed.** Once a verdict exists, `dismiss_claim` reverts; the claim must be settled.
 - **Spam has a price.** Filing a claim locks a bond set by the campaign. It comes back on any credible outcome and on a pre-review dismissal, and is forfeited into the bounty pool on Reject. Every researcher address carries an on-chain record of rewarded, merged, rejected and earned, shown to readers but never fed to the verifier: claims are judged on evidence, not on their author.
+- **A fix verdict belongs to one claim.** The verdict on a patched artifact is keyed by claim and artifact together, so a second claim that submits the same artifact cannot release escrow on a judgement made for someone else.
+- **A duplicate must point backward, on the same target.** The vault refuses a MergeDuplicate whose named original is later than the claim itself, or filed against a different contract in the campaign.
+- **Escalate needs the flag.** A verdict that escalates a campaign the project never flagged critical is refused; the campaign stays active.
 - **Verdicts are read strictly.** The verifier extracts the one JSON verdict from the consensus answer even when it arrives fenced or wrapped in text, and refuses anything unreadable, incomplete, or naming an unknown outcome without recording it. A fix verdict counts only as a real true or false.
 
 ## The patch flow
@@ -69,12 +72,12 @@ Every verdict carries a minority_note: the strongest dissenting view, produced b
 
 Two Python Intelligent Contracts on GenLayer Studio:
 
-- **Verifier** (`0x4712c4165eFaf8CCd8F0371E7821ed729c872569`) reads claims, campaigns, and same-target prior claims canonically from the vault, fetches the target source with `gl.nondet.web.get` inside `gl.eq_principle.strict_eq`, reasons via `gl.eq_principle.prompt_non_comparative`, and stores one structured verdict per claim. It also judges submitted patched artifacts. It produces verdicts only and never touches funds.
-- **Vault** (`0x60c5C00b46a0845A11E5a1D5Cf22a1607E55e994`) embeds the GenUSDC settlement token, holds bounty pools, records multi-target campaigns and claims, and settles, releases, and refunds by reading the verifier directly. Privileged actions use the real transaction sender; there is no spoofable caller parameter. `mint` is owner-gated for demos; a public capped `faucet` grants each address a one-time 50000 test allowance.
+- **Verifier** (`0xD446b388Fe05C29B0966AA31D9999FD87D0aD1c7`) reads claims, campaigns, and same-target prior claims canonically from the vault, fetches the target source with `gl.nondet.web.get` inside `gl.eq_principle.strict_eq`, reasons via `gl.eq_principle.prompt_non_comparative`, and stores one structured verdict per claim. It also judges submitted patched artifacts. It produces verdicts only and never touches funds.
+- **Vault** (`0xF626c9D720cC9c26D116dad2b1Fd8ae9973d1949`) embeds the GenUSDC settlement token, holds bounty pools, records multi-target campaigns and claims, and settles, releases, and refunds by reading the verifier directly. Privileged actions use the real transaction sender; there is no spoofable caller parameter. `mint` is owner-gated for demos; a public capped `faucet` grants each address a one-time 50000 test allowance.
 
 Explorer:
-- Verifier: https://explorer-studio.genlayer.com/address/0x4712c4165eFaf8CCd8F0371E7821ed729c872569
-- Vault: https://explorer-studio.genlayer.com/address/0x60c5C00b46a0845A11E5a1D5Cf22a1607E55e994
+- Verifier: https://explorer-studio.genlayer.com/address/0xD446b388Fe05C29B0966AA31D9999FD87D0aD1c7
+- Vault: https://explorer-studio.genlayer.com/address/0xF626c9D720cC9c26D116dad2b1Fd8ae9973d1949
 
 Frontend: React + TypeScript + Vite + genlayer-js, deployed on Vercel. Wallet support is MetaMask plus a demo burner fallback.
 
@@ -101,7 +104,7 @@ two contracts at the addresses above; nothing is mocked.
 
 ## Tested
 
-**Contract test suite.** 38 tests run the real contract code on GenLayer's `gltest` direct runner, with no skips; only the other contract's replies and the model verdict are mocked. [TESTING.md](TESTING.md) maps every test to the guarantee it proves.
+**Contract test suite.** 43 tests run the real contract code on GenLayer's `gltest` direct runner, with no skips; only the other contract's replies and the model verdict are mocked. [TESTING.md](TESTING.md) maps every test to the guarantee it proves.
 
     pip install "genlayer-test[sim]"
     python -m pytest tests/ -q
