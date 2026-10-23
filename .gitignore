@@ -26,3 +26,6 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
+
+# keeper run state (revert counts between runs)
+keeper/.keeper-state.json

@@ -15,7 +15,7 @@ Remedy removes the human from all four. Validators read the locked evidence, rea
 
 ## How it works
 
-A project opens a **security campaign**: a bounty pool locked against a set of up to 10 commit-pinned target contracts (for example a token, a vault, and a router), with one severity-to-payout schedule for the whole program. Researchers submit claims over time. Each claim names which target it is filed against and locks its evidence at intake (proof-of-concept text, optional patch diff, claimed severity); nothing can be edited or backdated after submission.
+A project opens a **security campaign**: a bounty pool locked against a set of up to 10 commit-pinned target contracts (for example a token, a vault, and a router), with a severity-to-payout schedule for the whole program or a separate one for each target. Researchers submit claims over time. Each claim names which target it is filed against, optionally cites a second target for a cross-contract flaw, and locks its evidence at intake (proof-of-concept text, optional patch diff, claimed severity); nothing can be edited or backdated after submission.
 
 When a review runs, the verifier reads the claim straight from the vault, fetches that claim's target source, and reasons over it, then reaches consensus on one of five outcomes:
 
@@ -24,16 +24,18 @@ When a review runs, the verifier reads the claim straight from the vault, fetche
 | **Reward** | Credible and novel. The bounty pays out to the researcher. |
 | **Reject** | Not credible on the evidence. No payout, reasoning on record. |
 | **HoldForPatch** | Credible, with a fix attached. The reward escrows until a patched artifact is verified. |
-| **MergeDuplicate** | Overlaps an earlier claim on the same target. The bounty splits by attribution, weighted to the first reporter. |
+| **MergeDuplicate** | Overlaps an earlier claim that shares a target. The bounty splits by attribution, weighted to the first reporter. |
 | **Escalate** | A credible Critical on a flagged target. The campaign pauses for review. |
 
 ## Multi-target campaigns
 
-Real protocols are several contracts, and real bugs live in one of them. A campaign therefore covers a set of targets, and every claim is bound to exactly one:
+Real protocols are several contracts. A campaign therefore covers a set of targets, and every claim is bound to a primary target, the contract where the flaw lives:
 
 - The researcher picks a target by its index in the campaign. The vault resolves the URL itself from its own storage, so a caller never supplies a URL and cannot point a claim at anything the campaign did not list.
 - Every target in the set must be commit-pinned, the set holds 1 to 10 targets, and a repeated URL is refused.
-- Duplicate detection is scoped per target. Two claims against different contracts of the same campaign are never treated as duplicates of each other; two claims against the same contract still can be.
+- **Per-target payouts.** A project can give each target its own severity schedule, so a vault holding funds can pay more than a periphery helper. Schedules are fixed when the campaign opens and can never be edited, so a project cannot lower a payout after seeing a claim.
+- **Cross-contract claims.** Some bugs only exist between two contracts. A claim may cite one second target of the same campaign; the verifier fetches both commit-pinned sources, records the sha256 of each, and judges the claim against both together. The claim is still paid from its **primary** target's schedule, so citing a more expensive contract never raises a payout.
+- **Duplicate scope follows the targets.** The duplicate check sees every earlier claim that shares a target with this one, and nothing else. Claims against unrelated contracts are never merged, while the same cross-contract flaw filed from either side still is. The vault refuses a merge between claims that share no target.
 
 ## Trustless settlement
 
@@ -64,6 +66,12 @@ A HoldForPatch claim is completed with evidence, not discretion:
 3. `release_escrow` is permissionless and pays the researcher only when the submitted artifact's verdict is fixed.
 4. `refund_escrow` returns escrow to the pool only if the project calls it, the submitted artifact is not verified fixed, and a 7-day grace window has passed. A verified fix can never be refunded away.
 
+## No one has to press the button
+
+Every step that moves a claim forward is permissionless, so a keeper drives them on a schedule. `.github/workflows/keeper.yml` runs every 15 minutes: it reviews unreviewed claims, settles reviewed ones, runs the fix check on a held claim's submitted artifact, and releases escrow once the fix is judged fixed. Each run's actions and transaction links are published in the workflow's run summary.
+
+The keeper decides nothing. The contracts set every outcome and amount, so it needs no privileges, no funds, and no secret: it signs with a fresh throwaway key on each run. It never dismisses, refunds, or proposes a fix; those stay with the people who own them. A call that reverts three times in a row is skipped rather than retried forever.
+
 ## Disagreement is signal
 
 Every verdict carries a minority_note: the strongest dissenting view, produced by the same consensus that set the outcome and written on-chain alongside the verdict. It is one dissenting view per verdict, produced in consensus, not a tally of individual validators.
@@ -72,12 +80,12 @@ Every verdict carries a minority_note: the strongest dissenting view, produced b
 
 Two Python Intelligent Contracts on GenLayer Studio:
 
-- **Verifier** (`0xD446b388Fe05C29B0966AA31D9999FD87D0aD1c7`) reads claims, campaigns, and same-target prior claims canonically from the vault, fetches the target source with `gl.nondet.web.get` inside `gl.eq_principle.strict_eq`, reasons via `gl.eq_principle.prompt_non_comparative`, and stores one structured verdict per claim. It also judges submitted patched artifacts. It produces verdicts only and never touches funds.
-- **Vault** (`0xF626c9D720cC9c26D116dad2b1Fd8ae9973d1949`) embeds the GenUSDC settlement token, holds bounty pools, records multi-target campaigns and claims, and settles, releases, and refunds by reading the verifier directly. Privileged actions use the real transaction sender; there is no spoofable caller parameter. `mint` is owner-gated for demos; a public capped `faucet` grants each address a one-time 50000 test allowance.
+- **Verifier** (`0xc44E0461d6C1DCbC8F9A7F3A684c36E076c09801`) reads claims, campaigns, and same-target prior claims canonically from the vault, fetches the target source with `gl.nondet.web.get` inside `gl.eq_principle.strict_eq`, reasons via `gl.eq_principle.prompt_non_comparative`, and stores one structured verdict per claim. It also judges submitted patched artifacts. It produces verdicts only and never touches funds.
+- **Vault** (`0x999021cADC09505E68a9e75229e0a9048212e227`) embeds the GenUSDC settlement token, holds bounty pools, records multi-target campaigns and claims, and settles, releases, and refunds by reading the verifier directly. Privileged actions use the real transaction sender; there is no spoofable caller parameter. `mint` is owner-gated for demos; a public capped `faucet` grants each address a one-time 50000 test allowance.
 
 Explorer:
-- Verifier: https://explorer-studio.genlayer.com/address/0xD446b388Fe05C29B0966AA31D9999FD87D0aD1c7
-- Vault: https://explorer-studio.genlayer.com/address/0xF626c9D720cC9c26D116dad2b1Fd8ae9973d1949
+- Verifier: https://explorer-studio.genlayer.com/address/0xc44E0461d6C1DCbC8F9A7F3A684c36E076c09801
+- Vault: https://explorer-studio.genlayer.com/address/0x999021cADC09505E68a9e75229e0a9048212e227
 
 Frontend: React + TypeScript + Vite + genlayer-js, deployed on Vercel. Wallet support is MetaMask plus a demo burner fallback.
 
@@ -104,10 +112,12 @@ two contracts at the addresses above; nothing is mocked.
 
 ## Tested
 
-**Contract test suite.** 43 tests run the real contract code on GenLayer's `gltest` direct runner, with no skips; only the other contract's replies and the model verdict are mocked. [TESTING.md](TESTING.md) maps every test to the guarantee it proves.
+**Contract test suite.** 56 tests run the real contract code on GenLayer's `gltest` direct runner, with no skips; only the other contract's replies and the model verdict are mocked. [TESTING.md](TESTING.md) maps every test to the guarantee it proves.
 
     pip install "genlayer-test[sim]"
     python -m pytest tests/ -q
+
+**Keeper suite.** 17 tests cover the keeper's planning rules and its execution against a simulated chain (`cd keeper && npm ci && npm test`).
 
 **Live reviews.** Proven on-chain across two vulnerability classes on two targets:
 
@@ -120,10 +130,10 @@ On CredencePayout the verifier rewarded the real unchecked-call bug, rejected a 
 
 - Remedy verifies security-claim credibility from readable evidence. It does **not** execute exploits: validators reason over the contract source, the proof-of-concept as written, and the patch diff. This is a credibility verdict from static evidence, not a proof of execution.
 - Remedy covers smart-contract security claims that are statically judgeable from readable code, PoC, and diffs. Exploits needing live execution are out of scope.
-- Each claim is judged against one target. A bug that only appears in the interaction between two contracts must currently be filed against the contract where the flaw lives, with the other contract described in the PoC.
-- Each reviewed source must fit in 24000 bytes; larger files are refused rather than judged partially.
+- A claim cites at most two targets: its primary and one second contract. A flaw spanning three or more contracts must be filed against the two that matter most, with the rest described in the PoC.
+- Each reviewed source must fit in 24000 bytes, and a cross-contract claim fetches two of them; larger files are refused rather than judged partially.
 - The verifier reasons over readable source in any language, but verdict quality is strongest for well-documented contract languages, Solidity most of all.
-- Reviews are triggered manually; there is no automatic scheduler yet.
+- The keeper runs on GitHub Actions every 15 minutes. GitHub can delay scheduled runs at busy times, and pauses scheduled workflows in a repository with no activity for 60 days, so "no human in the loop" here means no human decision, not a hard real-time guarantee. Anyone can still trigger every step by hand.
 - GenUSDC is an embedded testnet token with no real value. A production deployment would use a real bridged asset.
 - A project can submit a claim on its own campaign. This is economically pointless: the pool is the project's own funds, so a self-payout only returns their deposit minus the protocol fee. It also cannot be cleanly prevented on-chain, since a project could fund from one wallet and submit from another. Credibility is still decided by consensus, so a project cannot force a payout on a claim that is not genuine.
 

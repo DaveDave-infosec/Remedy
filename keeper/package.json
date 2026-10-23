@@ -1,0 +1,19 @@
+{
+  "name": "remedy-keeper",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Scheduled keeper that drives Remedy's permissionless review, settlement and fix-verification calls.",
+  "type": "module",
+  "scripts": {
+    "start": "node keeper.mjs",
+    "dry": "DRY_RUN=1 node keeper.mjs",
+    "test": "node --test plan.test.mjs keeper.test.mjs"
+  },
+  "dependencies": {
+    "genlayer-js": "1.1.8",
+    "viem": "2.54.6"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -15,6 +15,11 @@ REFUND_GRACE_SECONDS = 604800
 PIN_PREFIX = "https://raw.githubusercontent.com/"
 HEX_CHARS = "0123456789abcdef"
 MAX_TARGETS = 10
+SEVERITIES = ("Critical", "High", "Medium", "Low")
+# V4: each target in a campaign carries its own severity schedule, fixed when the
+# campaign opens. A claim may also cite ONE second target for a flaw that lives in
+# the interaction between two contracts; it is paid from its PRIMARY target's
+# schedule, and its duplicate scope is every target it names.
 
 
 class RemedyVault(gl.Contract):
@@ -43,6 +48,8 @@ class RemedyVault(gl.Contract):
     cam_is_critical_target: TreeMap[str, bool]
     cam_claim_count: TreeMap[str, u256]
     cam_bond: TreeMap[str, u256]
+    # "<campaign>#<target index>#<severity>" -> payout, fixed at opening
+    cam_tier: TreeMap[str, u256]
 
     claim_ids: DynArray[str]
     claim_counter: u256
@@ -69,6 +76,9 @@ class RemedyVault(gl.Contract):
     cl_patched_url: TreeMap[str, str]
     cl_bond: TreeMap[str, u256]
     cl_bond_status: TreeMap[str, str]
+    # V4: optional second cited target (absent key = none)
+    cl_second_index: TreeMap[str, u256]
+    cl_second_url: TreeMap[str, str]
 
     # --- V3 pillar 2: researcher reputation (flat, keyed by lowercase address) ---
     rep_submitted: TreeMap[str, u256]
@@ -135,6 +145,7 @@ class RemedyVault(gl.Contract):
         pay_low: int,
         is_critical_target: bool,
         bond_amount: int,
+        target_tiers: list,
     ) -> str:
         project = gl.message.sender_address.as_hex.lower()
 
@@ -164,6 +175,39 @@ class RemedyVault(gl.Contract):
         bond = int(bond_amount)
         if bond < 0:
             raise gl.vm.UserError("claim bond cannot be negative")
+
+        # Per-target schedules. An empty list means every target uses the campaign
+        # schedule; otherwise there is exactly one [critical, high, medium, low]
+        # entry per target. They are fixed here and never editable, so a project
+        # cannot lower a target's payout after seeing a claim against it.
+        defaults = [int(pay_critical), int(pay_high), int(pay_medium), int(pay_low)]
+        for d in defaults:
+            if d < 0:
+                raise gl.vm.UserError("a severity payout cannot be negative")
+        tiers = []
+        if len(target_tiers) == 0:
+            for i in range(n):
+                tiers.append(defaults)
+        else:
+            if len(target_tiers) != n:
+                raise gl.vm.UserError(
+                    "target_tiers must be empty or give one schedule per target; "
+                    "this campaign has " + str(n) + " target(s)"
+                )
+            for i in range(n):
+                row = target_tiers[i]
+                if len(row) != 4:
+                    raise gl.vm.UserError(
+                        "each target schedule needs four payouts: critical, high, "
+                        "medium, low"
+                    )
+                vals = []
+                for j in range(4):
+                    x = int(row[j])
+                    if x < 0:
+                        raise gl.vm.UserError("a severity payout cannot be negative")
+                    vals.append(x)
+                tiers.append(vals)
         bal = int(self.balances[project]) if project in self.balances else 0
         if bal < amt:
             raise gl.vm.UserError("insufficient GenUSDC balance for pool")
@@ -188,6 +232,9 @@ class RemedyVault(gl.Contract):
         self.cam_is_critical_target[campaign_id] = is_critical_target
         self.cam_claim_count[campaign_id] = u256(0)
         self.cam_bond[campaign_id] = u256(bond)
+        for i in range(n):
+            for j in range(4):
+                self.cam_tier[campaign_id + "#" + str(i) + "#" + SEVERITIES[j]] = u256(tiers[i][j])
         return campaign_id
 
     @gl.public.write
@@ -199,6 +246,7 @@ class RemedyVault(gl.Contract):
         poc_text: str,
         patch_diff: str,
         claimed_severity: str,
+        second_target_index: int,
     ) -> str:
         if campaign_id not in self.cam_status:
             raise gl.vm.UserError("unknown campaign")
@@ -213,6 +261,23 @@ class RemedyVault(gl.Contract):
                 + str(count) + " target(s), valid indices 0 to " + str(count - 1)
             )
         resolved_url = self.cam_target_at[campaign_id + "#" + str(idx)]
+
+        # An optional second cited target, for a flaw that only appears in the
+        # interaction between two contracts. -1 means none. It must be a different
+        # target of the same campaign, resolved by the vault like the primary.
+        idx2 = int(second_target_index)
+        second_url = ""
+        if idx2 != -1:
+            if idx2 < 0 or idx2 >= count:
+                raise gl.vm.UserError(
+                    "second_target_index out of range; use -1 for none, or 0 to "
+                    + str(count - 1)
+                )
+            if idx2 == idx:
+                raise gl.vm.UserError(
+                    "the second cited target must differ from the primary target"
+                )
+            second_url = self.cam_target_at[campaign_id + "#" + str(idx2)]
 
         submitter = gl.message.sender_address.as_hex.lower()
         bond = int(self.cam_bond[campaign_id]) if campaign_id in self.cam_bond else 0
@@ -253,17 +318,19 @@ class RemedyVault(gl.Contract):
         self.cl_patched_url[claim_id] = ""
         self.cl_bond[claim_id] = u256(bond)
         self.cl_bond_status[claim_id] = "locked" if bond > 0 else "none"
+        if idx2 != -1:
+            self.cl_second_index[claim_id] = u256(idx2)
+            self.cl_second_url[claim_id] = second_url
         self._rep_add("submitted", submitter, 1)
         return claim_id
 
     @gl.public.view
     def get_priors_json(self, campaign_id: str, exclude_claim_id: str) -> str:
-        # Per-target dedup scope: only priors filed against the SAME target index
-        # as the excluded claim are returned, so the verifier never treats claims
-        # on different contracts of the same campaign as duplicates.
-        target_idx = -1
-        if exclude_claim_id in self.cl_target_index:
-            target_idx = int(self.cl_target_index[exclude_claim_id])
+        # Duplicate scope: a prior is returned only if it shares at least one
+        # target with this claim (its primary or its second cited target). Claims
+        # on unrelated contracts of the same campaign are never shown, while the
+        # same cross-contract flaw filed from either side still is.
+        mine = self._targets_of(exclude_claim_id) if exclude_claim_id in self.cl_status else []
         out = []
         for i in range(len(self.claim_ids)):
             cid = self.claim_ids[i]
@@ -271,11 +338,8 @@ class RemedyVault(gl.Contract):
                 continue
             if cid == exclude_claim_id:
                 continue
-            if target_idx >= 0:
-                if cid not in self.cl_target_index:
-                    continue
-                if int(self.cl_target_index[cid]) != target_idx:
-                    continue
+            if len(mine) > 0 and not self._shares_target(mine, self._targets_of(cid)):
+                continue
             st = self.cl_status[cid]
             if st != "open" and st != "rewarded" and st != "held":
                 continue
@@ -294,16 +358,32 @@ class RemedyVault(gl.Contract):
                 return cid
         return ""
 
-    def _payout_for(self, campaign_id: str, severity: str) -> int:
-        if severity == "Critical":
-            return int(self.cam_pay_critical[campaign_id])
-        if severity == "High":
-            return int(self.cam_pay_high[campaign_id])
-        if severity == "Medium":
-            return int(self.cam_pay_medium[campaign_id])
-        if severity == "Low":
-            return int(self.cam_pay_low[campaign_id])
+    def _targets_of(self, claim_id: str) -> list:
+        t = [int(self.cl_target_index[claim_id]) if claim_id in self.cl_target_index else 0]
+        if claim_id in self.cl_second_index:
+            t.append(int(self.cl_second_index[claim_id]))
+        return t
+
+    def _shares_target(self, a: list, b: list) -> bool:
+        for x in a:
+            if x in b:
+                return True
+        return False
+
+    def _tier(self, campaign_id: str, target_idx: int, severity: str) -> int:
+        key = campaign_id + "#" + str(target_idx) + "#" + severity
+        if key in self.cam_tier:
+            return int(self.cam_tier[key])
         return 0
+
+    # A claim is always paid from its PRIMARY target's schedule. Naming a second,
+    # more expensive contract never raises the payout.
+    def _payout_for_claim(self, claim_id: str, severity: str) -> int:
+        if severity not in SEVERITIES:
+            return 0
+        campaign_id = self.cl_campaign[claim_id]
+        idx = int(self.cl_target_index[claim_id]) if claim_id in self.cl_target_index else 0
+        return self._tier(campaign_id, idx, severity)
 
     def _rep_add(self, which: str, addr: str, amount: int):
         a = addr.lower()
@@ -409,6 +489,10 @@ class RemedyVault(gl.Contract):
             raise gl.vm.UserError("verdict is for a different claim")
         if str(v["target_url"]) != self.cl_target_url[claim_id]:
             raise gl.vm.UserError("verdict target does not match claim target")
+        mine2 = self.cl_second_url[claim_id] if claim_id in self.cl_second_url else ""
+        theirs2 = str(v["second_target_url"]) if "second_target_url" in v else ""
+        if mine2 != theirs2:
+            raise gl.vm.UserError("verdict second target does not match claim second target")
 
         outcome = str(v["outcome"])
         severity = str(v["severity"])
@@ -423,7 +507,7 @@ class RemedyVault(gl.Contract):
         pool = int(self.cam_pool[campaign_id])
         fee_bps = int(self.protocol_fee_bps)
 
-        payout = self._payout_for(campaign_id, severity)
+        payout = self._payout_for_claim(claim_id, severity)
 
         if outcome == "Reject":
             self.cl_outcome[claim_id] = "Reject"
@@ -494,9 +578,7 @@ class RemedyVault(gl.Contract):
                     "a duplicate must reference an EARLIER claim; the named claim is "
                     "not earlier than this one"
                 )
-            this_idx = int(self.cl_target_index[claim_id]) if claim_id in self.cl_target_index else 0
-            orig_idx = int(self.cl_target_index[original_claim_id]) if original_claim_id in self.cl_target_index else 0
-            if orig_idx != this_idx:
+            if not self._shares_target(self._targets_of(claim_id), self._targets_of(original_claim_id)):
                 raise gl.vm.UserError(
                     "a duplicate must reference a claim on the SAME target; the named "
                     "claim is filed against a different contract"
@@ -703,9 +785,14 @@ class RemedyVault(gl.Contract):
         if campaign_id not in self.cam_status:
             return {}
         targets = []
+        tiers = []
         count = int(self.cam_target_count[campaign_id])
         for i in range(count):
             targets.append(self.cam_target_at[campaign_id + "#" + str(i)])
+            row = []
+            for sev in SEVERITIES:
+                row.append(self._tier(campaign_id, i, sev))
+            tiers.append(row)
         return {
             "campaign_id": campaign_id,
             "project": self.cam_project[campaign_id],
@@ -722,6 +809,7 @@ class RemedyVault(gl.Contract):
             "is_critical_target": self.cam_is_critical_target[campaign_id],
             "claim_count": int(self.cam_claim_count[campaign_id]),
             "bond": int(self.cam_bond[campaign_id]) if campaign_id in self.cam_bond else 0,
+            "target_tiers": tiers,
         }
 
     @gl.public.view
@@ -753,6 +841,12 @@ class RemedyVault(gl.Contract):
             "patched_url": self.cl_patched_url[claim_id] if claim_id in self.cl_patched_url else "",
             "bond": int(self.cl_bond[claim_id]) if claim_id in self.cl_bond else 0,
             "bond_status": self.cl_bond_status[claim_id] if claim_id in self.cl_bond_status else "none",
+            "second_target_index": int(self.cl_second_index[claim_id]) if claim_id in self.cl_second_index else -1,
+            "second_target_url": self.cl_second_url[claim_id] if claim_id in self.cl_second_url else "",
+            "pay_critical": self._payout_for_claim(claim_id, "Critical"),
+            "pay_high": self._payout_for_claim(claim_id, "High"),
+            "pay_medium": self._payout_for_claim(claim_id, "Medium"),
+            "pay_low": self._payout_for_claim(claim_id, "Low"),
         }
 
     @gl.public.view

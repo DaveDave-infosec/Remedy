@@ -26,6 +26,10 @@ export function OpenCampaign({
   const [payLow, setPayLow] = useState("500");
   const [isCritical, setIsCritical] = useState(false);
   const [bond, setBond] = useState("100");
+  // V4: optional per-target schedules, one [critical, high, medium, low] row per
+  // target. Off means every target uses the campaign schedule above.
+  const [perTarget, setPerTarget] = useState(false);
+  const [tierRows, setTierRows] = useState<string[][]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
@@ -37,12 +41,29 @@ export function OpenCampaign({
     setTargets((prev) => prev.map((t, j) => (j === i ? value : t)));
   }
 
+  const defaultsRow = () => [payCritical, payHigh, payMedium, payLow];
+
   function addTarget() {
-    setTargets((prev) => (prev.length >= MAX_TARGETS ? prev : [...prev, ""]));
+    if (targets.length >= MAX_TARGETS) return;
+    setTargets((prev) => [...prev, ""]);
+    setTierRows((prev) => [...prev, defaultsRow()]);
   }
 
   function removeTarget(i: number) {
-    setTargets((prev) => (prev.length <= 1 ? prev : prev.filter((_, j) => j !== i)));
+    if (targets.length <= 1) return;
+    setTargets((prev) => prev.filter((_, j) => j !== i));
+    setTierRows((prev) => prev.filter((_, j) => j !== i));
+  }
+
+  function togglePerTarget(on: boolean) {
+    // start every row from the campaign schedule, so turning it on changes nothing
+    // until a value is edited
+    if (on) setTierRows(targets.map(() => defaultsRow()));
+    setPerTarget(on);
+  }
+
+  function setTierAt(row: number, col: number, value: string) {
+    setTierRows((prev) => prev.map((r, i) => (i === row ? r.map((v, j) => (j === col ? value : v)) : r)));
   }
 
   async function submit() {
@@ -76,6 +97,22 @@ export function OpenCampaign({
       setErr("Claim bond must be a whole number of 0 or more.");
       return;
     }
+    const defaults = [payCritical, payHigh, payMedium, payLow].map(Number);
+    if (defaults.some((x) => !Number.isInteger(x) || x < 0)) {
+      setErr("Every severity payout must be a whole number of 0 or more.");
+      return;
+    }
+    let targetTiers: number[][] = [];
+    if (perTarget) {
+      targetTiers = tierRows.slice(0, cleaned.length).map((r) => r.map(Number));
+      const badRow = targetTiers.findIndex((r) => r.length !== 4 || r.some((x) => !Number.isInteger(x) || x < 0));
+      if (badRow >= 0 || targetTiers.length !== cleaned.length) {
+        setErr(
+          "Target #" + Math.max(badRow, 0) + " has a payout that is not a whole number of 0 or more."
+        );
+        return;
+      }
+    }
     if (insufficient) {
       setErr(
         "Insufficient balance: your pool of " +
@@ -97,9 +134,12 @@ export function OpenCampaign({
         Number(payMedium),
         Number(payLow),
         isCritical,
-        Number(bond)
+        Number(bond),
+        targetTiers
       );
       setTargets([""]);
+      setTierRows([]);
+      setPerTarget(false);
       // hold busy through the reload so the list shows the new campaign
       // before the button resets (no revert/manual-refresh flicker).
       await onOpened();
@@ -139,7 +179,7 @@ export function OpenCampaign({
             disabled={busy}
           />
           {targets.length > 1 && (
-            <button type="button" onClick={() => removeTarget(i)} disabled={busy}>
+            <button type="button" className="btn-secondary" onClick={() => removeTarget(i)} disabled={busy}>
               Remove
             </button>
           )}
@@ -184,6 +224,47 @@ export function OpenCampaign({
           <input type="number" value={payLow} onChange={(e) => setPayLow(e.target.value)} />
         </div>
       </div>
+
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={perTarget}
+          onChange={(e) => togglePerTarget(e.target.checked)}
+          disabled={busy}
+        />
+        Set a different payout schedule for each target (fixed once the campaign opens)
+      </label>
+
+      {perTarget && (
+        <div className="tier-table">
+          <div className="tier-head mono">
+            <span />
+            <span className="pay-crit">Critical</span>
+            <span className="pay-high">High</span>
+            <span className="pay-med">Medium</span>
+            <span className="pay-low">Low</span>
+          </div>
+          {targets.map((_, i) => (
+            <div key={i} className="tier-row">
+              <span className="mono">#{i}</span>
+              {[0, 1, 2, 3].map((j) => (
+                <input
+                  key={j}
+                  type="number"
+                  min={0}
+                  value={(tierRows[i] ?? [])[j] ?? ""}
+                  onChange={(e) => setTierAt(i, j, e.target.value)}
+                  disabled={busy}
+                />
+              ))}
+            </div>
+          ))}
+          <div className="hint">
+            A claim is always paid from the schedule of its primary target, even if it
+            cites a second, more expensive one.
+          </div>
+        </div>
+      )}
 
       <label className="check">
         <input

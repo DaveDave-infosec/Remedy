@@ -53,11 +53,11 @@ def test_release_refuses_another_claims_verdict(direct_vm, direct_deploy):
     vault = direct_deploy(VAULT, C.OWNER, C.FEEWALL, C.FEE_BPS, C.DUMMY_VERIFIER, sdk_version=C.SDK)
     direct_vm.sender = _S(C.PROJECT)
     vault.faucet()
-    vault.open_campaign([C.PINNED], 20000, 10000, 5000, 2000, 500, False, 0)
+    vault.open_campaign([C.PINNED], 20000, 10000, 5000, 2000, 500, False, 0, [])
 
     direct_vm.sender = _S(C.HUNTER)
-    a = vault.submit_claim("cam_0", AT, 0, "poc one", "--- patch ---", "High")
-    b = vault.submit_claim("cam_0", AT, 0, "poc two", "--- patch ---", "High")
+    a = vault.submit_claim("cam_0", AT, 0, "poc one", "--- patch ---", "High", -1)
+    b = vault.submit_claim("cam_0", AT, 0, "poc two", "--- patch ---", "High", -1)
 
     direct_vm.warp("2026-06-01T00:00:00Z")
     for cid in (a, b):
@@ -90,10 +90,10 @@ def test_merge_refuses_a_later_claim_as_the_original(direct_vm, direct_deploy):
     vault = direct_deploy(VAULT, C.OWNER, C.FEEWALL, C.FEE_BPS, C.DUMMY_VERIFIER, sdk_version=C.SDK)
     direct_vm.sender = _S(C.PROJECT)
     vault.faucet()
-    vault.open_campaign([C.PINNED], 20000, 10000, 5000, 2000, 500, False, 0)
+    vault.open_campaign([C.PINNED], 20000, 10000, 5000, 2000, 500, False, 0, [])
     direct_vm.sender = _S(C.HUNTER)
-    first = vault.submit_claim("cam_0", AT, 0, "the original", "", "High")
-    vault.submit_claim("cam_0", AT, 0, "a later claim", "", "High")
+    first = vault.submit_claim("cam_0", AT, 0, "the original", "", "High", -1)
+    vault.submit_claim("cam_0", AT, 0, "a later claim", "", "High", -1)
 
     merged = C.verdict(first, C.PINNED, "MergeDuplicate", "High",
                        duplicate_of_seq=1, original_bps=7000, duplicate_bps=3000)
@@ -109,10 +109,10 @@ def test_merge_refuses_an_original_on_another_target(direct_vm, direct_deploy):
     vault = direct_deploy(VAULT, C.OWNER, C.FEEWALL, C.FEE_BPS, C.DUMMY_VERIFIER, sdk_version=C.SDK)
     direct_vm.sender = _S(C.PROJECT)
     vault.faucet()
-    vault.open_campaign([C.PINNED, C.PATCHED], 20000, 10000, 5000, 2000, 500, False, 0)
+    vault.open_campaign([C.PINNED, C.PATCHED], 20000, 10000, 5000, 2000, 500, False, 0, [])
     direct_vm.sender = _S(C.HUNTER)
-    vault.submit_claim("cam_0", AT, 0, "claim on target 0", "", "High")
-    later = vault.submit_claim("cam_0", AT, 1, "claim on target 1", "", "High")
+    vault.submit_claim("cam_0", AT, 0, "claim on target 0", "", "High", -1)
+    later = vault.submit_claim("cam_0", AT, 1, "claim on target 1", "", "High", -1)
 
     merged = C.verdict(later, C.PATCHED, "MergeDuplicate", "High",
                        duplicate_of_seq=0, original_bps=7000, duplicate_bps=3000)
@@ -128,9 +128,9 @@ def test_escalate_refused_on_a_non_critical_campaign(direct_vm, direct_deploy):
     vault = direct_deploy(VAULT, C.OWNER, C.FEEWALL, C.FEE_BPS, C.DUMMY_VERIFIER, sdk_version=C.SDK)
     direct_vm.sender = _S(C.PROJECT)
     vault.faucet()
-    vault.open_campaign([C.PINNED], 20000, 10000, 5000, 2000, 500, False, 0)
+    vault.open_campaign([C.PINNED], 20000, 10000, 5000, 2000, 500, False, 0, [])
     direct_vm.sender = _S(C.HUNTER)
-    cid = vault.submit_claim("cam_0", AT, 0, "poc", "", "Critical")
+    cid = vault.submit_claim("cam_0", AT, 0, "poc", "", "Critical", -1)
 
     direct_vm._gl_call_hook = C.make_hook({
         "get_case_for_claim": "remedy_0",

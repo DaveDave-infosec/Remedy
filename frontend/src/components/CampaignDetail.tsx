@@ -10,6 +10,7 @@ type Campaign = {
   project: string;
   targets: string[];
   target_count: number;
+  target_tiers?: number[][];
   bond: number;
   pool: number;
   escrowed: number;
@@ -36,6 +37,7 @@ type Claim = {
   escrowed: number;
   target_url: string;
   target_index: number;
+  second_target_index?: number;
   bond: number;
   bond_status: string;
   poc_text: string;
@@ -164,7 +166,10 @@ export function CampaignDetail({
           <div className="claimrow-top">
             <span className="mono claim-id">{cl.claim_id}</span>
             <span className="seq mono">seq {cl.seq}</span>
-            <span className="seq mono">target #{cl.target_index ?? 0}</span>
+            <span className="seq mono">
+              target #{cl.target_index ?? 0}
+              {(cl.second_target_index ?? -1) >= 0 ? " + #" + cl.second_target_index : ""}
+            </span>
             {cl.outcome === "MergeDuplicate" ? (
               <span className="status status-merged">merged</span>
             ) : cl.status === "dismissed" ? (
@@ -251,11 +256,19 @@ export function CampaignDetail({
             <span className={"status status-" + cam.status}>{cam.status}</span>
             {cam.is_critical_target && <span className="crit-flag">critical target</span>}
           </div>
-          {(cam.targets ?? []).map((t, i) => (
-            <div key={i} className="detail-url mono" title={t}>
-              #{i} {t}
-            </div>
-          ))}
+          {(cam.targets ?? []).map((t, i) => {
+            const row = (cam.target_tiers ?? [])[i];
+            return (
+              <div key={i} className="detail-url mono" title={t}>
+                #{i} {t}
+                {row && (
+                  <div className="detail-tiers">
+                    C {row[0]} · H {row[1]} · M {row[2]} · L {row[3]}
+                  </div>
+                )}
+              </div>
+            );
+          })}
           <div className="detail-nums mono">claim bond {cam.bond ?? 0} genUSDC</div>
           <div className="detail-nums mono">
             pool {cam.pool} · escrowed {cam.escrowed} · paid {cam.paid_total} · claims{" "}
@@ -286,6 +299,7 @@ export function CampaignDetail({
               account={account}
               campaignId={cam.campaign_id}
               targets={cam.targets ?? []}
+              tiers={cam.target_tiers ?? []}
               bond={cam.bond ?? 0}
               disabled={disabled}
               onSubmitted={load}

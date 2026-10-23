@@ -758,3 +758,34 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   line-height: 1.5;
   color: var(--text-dim);
 }
+
+/* V4: per-target payout schedules */
+.tier-table {
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 12px 14px;
+  margin: 10px 0 4px;
+  background: var(--ground);
+}
+.tier-head,
+.tier-row {
+  display: grid;
+  grid-template-columns: 3.5em repeat(4, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+.tier-head { font-size: 11px; margin-bottom: 6px; }
+.tier-row { margin-bottom: 6px; }
+.panel .tier-row input[type="number"] { padding: 7px 9px; font-size: 13px; }
+.detail-tiers {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin: 2px 0 6px 2.2em;
+}
+@media (max-width: 560px) {
+  .tier-head, .tier-row { grid-template-columns: 2.6em repeat(4, 1fr); gap: 5px; }
+}
+.tier-head .pay-crit { color: var(--crit); }
+.tier-head .pay-high { color: var(--high); }
+.tier-head .pay-med { color: var(--med); }
+.tier-head .pay-low { color: var(--low); }

@@ -1,4 +1,29 @@
-Expected: `43 passed`.
+# Testing
+
+Remedy ships two test suites. The contract suite exercises the deployed contract
+code directly: it drives the actual `contracts/remedy_verifier.py` and
+`contracts/remedy_vault.py` paths on GenLayer's `gltest` direct runner; only the
+cross-contract dependency (the other contract's view responses) and the model
+verdict are mocked, so every guard runs for real. The keeper suite tests the
+scheduled keeper's planning and execution against a simulated chain. No skipped
+tests in either.
+
+## Run
+
+Contract suite, from the repository root:
+
+    pip install "genlayer-test[sim]"
+    python -m pytest tests/ -q
+
+Expected: `56 passed`.
+
+Keeper suite:
+
+    cd keeper
+    npm ci
+    npm test
+
+Expected: `17` tests, `17` pass.
 
 ## What each test proves
 
@@ -175,6 +200,71 @@ not in the prompt.
 - `tests/test_steward_binding.py::test_escalate_refused_on_a_non_critical_campaign`:
   an Escalate verdict against a campaign that is not flagged critical is refused,
   the campaign stays active, and the claim stays open.
+
+### Per-target payout tiers and the second cited target (V4)
+
+Each target in a campaign carries its own severity schedule, fixed when the
+campaign opens. A claim may cite one second target of the same campaign for a
+flaw that lives in the interaction between two contracts. It is always paid
+from its primary target's schedule, so naming a dearer contract never raises a
+payout, and its duplicate scope is every target it names, so the same
+cross-contract flaw filed from either side is still caught.
+
+- `tests/test_v4_targets.py::test_per_target_tiers_are_stored_and_exposed`: a
+  campaign opened with one schedule per target stores and exposes each.
+- `tests/test_v4_targets.py::test_empty_tier_list_uses_the_campaign_schedule`:
+  with no per-target schedules, every target uses the campaign schedule.
+- `tests/test_v4_targets.py::test_malformed_tier_lists_are_refused`: a schedule
+  count that does not match the targets, a row without four payouts, and a
+  negative payout are each refused, and no refused attempt consumes a campaign id.
+- `tests/test_v4_targets.py::test_claim_is_paid_from_its_primary_targets_schedule`:
+  a claim citing a dearer second target is paid from its cheaper primary, and the
+  reverse claim is paid from its dearer primary.
+- `tests/test_v4_targets.py::test_second_target_is_validated_and_resolved`: a
+  second target out of range or equal to the primary is refused; a valid one is
+  resolved to its URL by the vault.
+- `tests/test_v4_targets.py::test_priors_include_any_claim_sharing_a_target`: the
+  duplicate check sees every earlier claim that shares a target, and none that
+  does not.
+- `tests/test_v4_targets.py::test_reversed_cross_contract_filing_can_merge`: the
+  same flaw filed from the other contract merges with the first filing, paid from
+  the settled claim's primary schedule.
+- `tests/test_v4_targets.py::test_merge_refused_when_claims_share_no_target`: a
+  duplicate naming a claim that shares no target is refused.
+- `tests/test_v4_targets.py::test_settle_refuses_a_verdict_with_the_wrong_second_target`:
+  a verdict whose second target is missing or different from the claim's is
+  refused, and the claim stays open.
+- `tests/test_v4_targets.py::test_review_fetches_hashes_and_shows_both_sources`:
+  the verifier fetches the second source, records its sha256 beside the
+  primary's, and shows the model both.
+- `tests/test_v4_targets.py::test_single_target_review_records_no_second_source`:
+  a single-target claim records no second source and the model is shown none.
+- `tests/test_v4_targets.py::test_oversize_second_source_is_refused`: a second
+  source over the size limit refuses the review and records nothing.
+- `tests/test_v4_targets.py::test_model_is_shown_the_claims_own_schedule`: the
+  schedule shown to the model is the claim's primary schedule, not the campaign
+  default.
+
+### The keeper (V4)
+
+The keeper is a scheduled GitHub Actions job that calls only permissionless
+functions: `run_review`, `settle_claim`, `verify_fix` and `release_escrow`. The
+contracts decide every outcome and amount, so it holds no privileges and no
+funds, and signs with a fresh throwaway key on each run. Its tests live in
+`keeper/`.
+
+- `keeper/plan.test.mjs`: an unreviewed open claim is reviewed; a reviewed one is
+  settled on the vault; a held claim's submitted artifact is checked, and its
+  escrow released once judged fixed; a claim with no artifact, or one judged not
+  fixed, is left for a person; resolved claims and paused campaigns are left
+  alone; cheap money-moving calls run before slow consensus calls; per-run caps
+  hold; a call that keeps reverting is skipped after the failure limit.
+- `keeper/keeper.test.mjs`: against a simulated chain with the network's real
+  receipt shape, a claim is reviewed on one run and settled on the next; a held
+  claim's fix is checked then released; a not-fixed verdict is never released or
+  re-checked; reverts are counted across runs and the call is then skipped; a dry
+  run sends nothing; a network error on send is retried and not counted as a
+  revert.
 
 ## Harness note
 

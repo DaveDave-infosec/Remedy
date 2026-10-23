@@ -3,9 +3,9 @@ import { readContract, writeContractChecked } from "./genlayer";
 // --- deployed Remedy contracts (GenLayer Studio, chainId 61999) ---
 // v2 TRUSTLESS: vault reads verdicts directly from the verifier; settlement
 // is permissionless (no owner relay).
-// V3.4 (multi-target campaigns, strict verdict parsing, claim bond + researcher record, claim-bound fix verdicts): fresh verifier + vault pair, set_vault wired.
-export const VAULT_ADDRESS = "0xF626c9D720cC9c26D116dad2b1Fd8ae9973d1949";
-export const VERIFIER_ADDRESS = "0xD446b388Fe05C29B0966AA31D9999FD87D0aD1c7";
+// V4 (per-target payout tiers, second cited target, keeper-driven settlement): fresh verifier + vault pair, set_vault wired.
+export const VAULT_ADDRESS = "0x999021cADC09505E68a9e75229e0a9048212e227";
+export const VERIFIER_ADDRESS = "0xc44E0461d6C1DCbC8F9A7F3A684c36E076c09801";
 
 // ---------- token ----------
 export async function mint(toAddress: string, amount: number) {
@@ -37,7 +37,10 @@ export async function openCampaign(
   payMedium: number,
   payLow: number,
   isCriticalTarget: boolean,
-  bondAmount: number
+  bondAmount: number,
+  // V4: one [critical, high, medium, low] schedule per target, or [] to use the
+  // campaign schedule for every target. Fixed at opening.
+  targetTiers: number[][]
 ) {
   return writeContractChecked(VAULT_ADDRESS, "open_campaign", [
     targetUrls,
@@ -48,6 +51,7 @@ export async function openCampaign(
     payLow,
     isCriticalTarget,
     bondAmount,
+    targetTiers,
   ]);
 }
 
@@ -70,7 +74,9 @@ export async function submitClaim(
   targetIndex: number,
   pocText: string,
   patchDiff: string,
-  claimedSeverity: string
+  claimedSeverity: string,
+  // V4: an optional second cited target, or -1 for none
+  secondTargetIndex: number
 ) {
   return writeContractChecked(VAULT_ADDRESS, "submit_claim", [
     campaignId,
@@ -79,6 +85,7 @@ export async function submitClaim(
     pocText,
     patchDiff,
     claimedSeverity,
+    secondTargetIndex,
   ]);
 }
 

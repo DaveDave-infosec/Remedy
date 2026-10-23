@@ -62,6 +62,9 @@ class RemedyVerifier(gl.Contract):
     v_original_bps: TreeMap[str, u256]
     v_duplicate_bps: TreeMap[str, u256]
     v_source_hash: TreeMap[str, str]
+    # V4: the second cited target, if any, and the hash of its judged source
+    v_second_url: TreeMap[str, str]
+    v_second_hash: TreeMap[str, str]
 
     # --- one authorized verdict per claim ---
     case_for_claim: TreeMap[str, str]
@@ -113,10 +116,14 @@ class RemedyVerifier(gl.Contract):
         local_patch = str(claim["patch_diff"])
         local_claimed = str(claim["claimed_severity"])
         local_is_critical = bool(campaign["is_critical_target"])
-        pay_c = int(campaign["pay_critical"])
-        pay_h = int(campaign["pay_high"])
-        pay_m = int(campaign["pay_medium"])
-        pay_l = int(campaign["pay_low"])
+        # The schedule shown to the model is the claim's own: its PRIMARY target's
+        # tiers, which is also what the vault pays from.
+        src = claim if "pay_critical" in claim else campaign
+        pay_c = int(src["pay_critical"])
+        pay_h = int(src["pay_high"])
+        pay_m = int(src["pay_medium"])
+        pay_l = int(src["pay_low"])
+        local_second_url = str(claim["second_target_url"]) if "second_target_url" in claim else ""
 
         prior_claims_json = vf.view().get_priors_json(campaign_id, claim_id)
 
@@ -154,21 +161,52 @@ class RemedyVerifier(gl.Contract):
         local_evidence = evidence
         local_source_hash = hashlib.sha256(local_evidence.encode("utf-8")).hexdigest()
 
+        # A second cited target is fetched and size-checked the same way, and its
+        # hash is recorded beside the primary's, so both judged sources are provable.
+        local_second = ""
+        local_second_hash = ""
+        if local_second_url != "":
+            def fetch_second() -> str:
+                response = gl.nondet.web.get(local_second_url)
+                body = response.body.decode("utf-8")
+                if len(body.encode("utf-8")) > MAX_SOURCE_BYTES:
+                    return OVERSIZE_SENTINEL
+                return body
+
+            second = gl.eq_principle.strict_eq(fetch_second)
+            if second == OVERSIZE_SENTINEL:
+                raise gl.vm.UserError(
+                    "the second cited target exceeds the reviewable size limit; the "
+                    "review is refused rather than judging a partial file"
+                )
+            local_second = second
+            local_second_hash = hashlib.sha256(local_second.encode("utf-8")).hexdigest()
+
         def get_input() -> str:
             patch_section = local_patch
             if patch_section.strip() == "":
                 patch_section = "(no patch submitted)"
+            second_section = ""
+            if local_second_url != "":
+                second_section = (
+                    "\n\nSECOND CITED CONTRACT SOURCE (the researcher says the flaw "
+                    "involves the interaction with this contract; fetched from locked "
+                    "source " + local_second_url + "):\n"
+                    + local_second
+                )
             return (
-                "TARGET CONTRACT SOURCE (fetched from locked source "
+                "TARGET CONTRACT SOURCE (the PRIMARY target, where the flaw must "
+                "live; fetched from locked source "
                 + local_url + "):\n"
                 + local_evidence
+                + second_section
                 + "\n\nNEW PROOF-OF-CONCEPT (as written by researcher):\n"
                 + local_poc
                 + "\n\nPROPOSED PATCH DIFF:\n"
                 + patch_section
                 + "\n\nRESEARCHER-CLAIMED SEVERITY:\n"
                 + local_claimed
-                + "\n\nPRIOR CLAIMS ON THIS SAME TARGET (for duplicate check):\n"
+                + "\n\nPRIOR CLAIMS SHARING A TARGET WITH THIS CLAIM (for duplicate check):\n"
                 + local_priors_text
             )
 
@@ -177,9 +215,11 @@ class RemedyVerifier(gl.Contract):
             "CREDIBILITY of a vulnerability claim from STATIC readable evidence. You "
             "do NOT execute code. Reason only over the TARGET CONTRACT SOURCE, the "
             "NEW PROOF-OF-CONCEPT as written, the PROPOSED PATCH DIFF, and the PRIOR "
-            "CLAIMS.\n"
+            "CLAIMS. If a SECOND CITED CONTRACT SOURCE is present, the claim is about "
+            "the interaction between the two contracts: judge it against both sources "
+            "together, but the flaw must be exploitable through the PRIMARY target.\n"
             "STEP 0 DUPLICATE CHECK: You are given PRIOR CLAIMS already submitted "
-            "against this same target. Each has a seq number (the on-chain "
+            "against a target this claim also names. Each has a seq number (the on-chain "
             "submission order; LOWER seq = submitted earlier; this ordering is "
             "assigned by the contract and CANNOT be forged or backdated), a "
             "submitted_at timestamp, and its PoC text. Compare the NEW claim's root "
@@ -311,6 +351,8 @@ class RemedyVerifier(gl.Contract):
         self.v_original_bps[case_id] = u256(original_bps if original_bps > 0 else 0)
         self.v_duplicate_bps[case_id] = u256(duplicate_bps if duplicate_bps > 0 else 0)
         self.v_source_hash[case_id] = local_source_hash
+        self.v_second_url[case_id] = local_second_url
+        self.v_second_hash[case_id] = local_second_hash
 
         self.case_for_claim[local_claim_id] = case_id
 
@@ -441,6 +483,8 @@ class RemedyVerifier(gl.Contract):
             "original_bps": int(self.v_original_bps[case_id]),
             "duplicate_bps": int(self.v_duplicate_bps[case_id]),
             "source_hash": self.v_source_hash[case_id] if case_id in self.v_source_hash else "",
+            "second_target_url": self.v_second_url[case_id] if case_id in self.v_second_url else "",
+            "second_source_hash": self.v_second_hash[case_id] if case_id in self.v_second_hash else "",
         }
 
     @gl.public.view

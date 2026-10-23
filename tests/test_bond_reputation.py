@@ -25,7 +25,7 @@ def _campaign(direct_vm, direct_deploy, bond=BOND, critical=False):
     v = direct_deploy(VAULT, C.OWNER, C.FEEWALL, C.FEE_BPS, C.DUMMY_VERIFIER, sdk_version=C.SDK)
     direct_vm.sender = _S(C.PROJECT)
     v.faucet()
-    v.open_campaign([C.PINNED], 20000, 10000, 5000, 2000, 500, critical, bond)
+    v.open_campaign([C.PINNED], 20000, 10000, 5000, 2000, 500, critical, bond, [])
     for h in (C.HUNTER, C.HUNTER2):
         direct_vm.sender = _S(h)
         v.faucet()
@@ -34,7 +34,7 @@ def _campaign(direct_vm, direct_deploy, bond=BOND, critical=False):
 
 def _file(direct_vm, v, who, poc="poc", patch=""):
     direct_vm.sender = _S(who)
-    return v.submit_claim("cam_0", AT, 0, poc, patch, "High")
+    return v.submit_claim("cam_0", AT, 0, poc, patch, "High", -1)
 
 
 def _settle(direct_vm, v, claim_id, verdict_obj):
@@ -60,10 +60,10 @@ def test_bond_requires_balance(direct_vm, direct_deploy):
     v = direct_deploy(VAULT, C.OWNER, C.FEEWALL, C.FEE_BPS, C.DUMMY_VERIFIER, sdk_version=C.SDK)
     direct_vm.sender = _S(C.PROJECT)
     v.faucet()
-    v.open_campaign([C.PINNED], 20000, 10000, 5000, 2000, 500, False, BOND)
+    v.open_campaign([C.PINNED], 20000, 10000, 5000, 2000, 500, False, BOND, [])
     direct_vm.sender = _S(C.HUNTER)  # never claimed the faucet: balance 0
     with direct_vm.expect_revert("claim bond"):
-        v.submit_claim("cam_0", AT, 0, "poc", "", "High")
+        v.submit_claim("cam_0", AT, 0, "poc", "", "High", -1)
     assert v.get_campaign("cam_0")["claim_count"] == 0
 
 
@@ -72,14 +72,14 @@ def test_negative_bond_refused(direct_vm, direct_deploy):
     direct_vm.sender = _S(C.PROJECT)
     v.faucet()
     with direct_vm.expect_revert("cannot be negative"):
-        v.open_campaign([C.PINNED], 20000, 10000, 5000, 2000, 500, False, -1)
+        v.open_campaign([C.PINNED], 20000, 10000, 5000, 2000, 500, False, -1, [])
 
 
 def test_zero_bond_campaign_needs_no_balance(direct_vm, direct_deploy):
     v = direct_deploy(VAULT, C.OWNER, C.FEEWALL, C.FEE_BPS, C.DUMMY_VERIFIER, sdk_version=C.SDK)
     direct_vm.sender = _S(C.PROJECT)
     v.faucet()
-    v.open_campaign([C.PINNED], 20000, 10000, 5000, 2000, 500, False, 0)
+    v.open_campaign([C.PINNED], 20000, 10000, 5000, 2000, 500, False, 0, [])
     cid = _file(direct_vm, v, C.HUNTER)  # HUNTER has no balance at all
     assert v.get_claim(cid)["bond_status"] == "none"
 

@@ -8,9 +8,9 @@ def test_dismiss_blocked_when_verdict_exists(direct_vm, direct_deploy):
     def S(a): return Address(a)
 
     direct_vm.sender = S(C.PROJECT)
-    vault.faucet(); vault.open_campaign([C.PINNED], 20000, 10000, 5000, 2000, 500, False, 0)
+    vault.faucet(); vault.open_campaign([C.PINNED], 20000, 10000, 5000, 2000, 500, False, 0, [])
     direct_vm.sender = S(C.HUNTER)
-    vault.submit_claim("cam_0", "2026-01-01T00:00:00Z", 0, "poc", "", "High")
+    vault.submit_claim("cam_0", "2026-01-01T00:00:00Z", 0, "poc", "", "High", -1)
 
     # a verdict EXISTS for the claim -> dismiss must be refused
     direct_vm._gl_call_hook = C.make_hook({"get_case_for_claim": "remedy_0"})

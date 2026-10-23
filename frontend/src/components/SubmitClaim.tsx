@@ -18,6 +18,7 @@ export function SubmitClaim({
   account,
   campaignId,
   targets,
+  tiers,
   bond,
   disabled,
   onSubmitted,
@@ -25,12 +26,16 @@ export function SubmitClaim({
   account: string;
   campaignId: string;
   targets: string[];
+  tiers?: number[][];
   bond: number;
   disabled: boolean;
   onSubmitted: () => void | Promise<void>;
 }) {
   void account;
   const [targetIndex, setTargetIndex] = useState(0);
+  // V4: an optional second cited target, for a flaw in the interaction between
+  // two contracts. -1 means none.
+  const [secondIndex, setSecondIndex] = useState(-1);
   const [poc, setPoc] = useState("");
   const [patch, setPatch] = useState("");
   const [severity, setSeverity] = useState("High");
@@ -40,6 +45,10 @@ export function SubmitClaim({
 
   const noTargets = targets.length === 0;
   const safeIndex = targetIndex >= 0 && targetIndex < targets.length ? targetIndex : 0;
+  // the second target can never be the primary, and must exist
+  const safeSecond =
+    secondIndex >= 0 && secondIndex < targets.length && secondIndex !== safeIndex ? secondIndex : -1;
+  const schedule = tiers && tiers[safeIndex] ? tiers[safeIndex] : null;
 
   async function submit() {
     setErr(null);
@@ -62,8 +71,10 @@ export function SubmitClaim({
         safeIndex,
         poc.trim(),
         patch.trim(),
-        severity
+        severity,
+        safeSecond
       );
+      setSecondIndex(-1);
       // hold the busy state through the reload so the button stays
       // "Submitting..." (disabled) until the new claim actually appears.
       // This prevents a confused double-submit during chain confirmation.
@@ -123,6 +134,33 @@ export function SubmitClaim({
             </option>
           ))}
         </select>
+      )}
+
+      {targets.length > 1 && (
+        <>
+          <label>Second cited target (optional, for a flaw between two contracts)</label>
+          <select
+            value={safeSecond}
+            onChange={(e) => setSecondIndex(Number(e.target.value))}
+            disabled={busy}
+          >
+            <option value={-1}>None</option>
+            {targets.map((t, i) =>
+              i === safeIndex ? null : (
+                <option key={i} value={i} title={t}>
+                  #{i} {shortTarget(t)}
+                </option>
+              )
+            )}
+          </select>
+        </>
+      )}
+
+      {schedule && (
+        <div className="hint mono">
+          paid from the schedule of #{safeIndex}: Critical {schedule[0]} · High {schedule[1]} ·
+          Medium {schedule[2]} · Low {schedule[3]}
+        </div>
       )}
 
       <label>Proof-of-concept (describe the vulnerability and how it triggers)</label>
