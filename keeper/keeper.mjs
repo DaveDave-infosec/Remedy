@@ -124,8 +124,10 @@ export async function execute(client, address, method, claimId, waitRetries = 60
   return { hash, outcome: "ok", detail: "" };
 }
 
-function summarize(lines) {
-  const out = process.env.GITHUB_STEP_SUMMARY;
+// Only the env passed to runOnce decides where the summary goes, so the test
+// suite (which passes its own env) never writes into a real run's summary.
+function summarize(env, lines) {
+  const out = env.GITHUB_STEP_SUMMARY;
   if (out) appendFileSync(out, lines.join("\n") + "\n");
 }
 
@@ -182,7 +184,7 @@ export async function runOnce({ client, account, addr, env = process.env }) {
 
   // dry runs never change the counts, but the file must exist for the cache step
   saveFailures(STATE_PATH, failures);
-  summarize(md);
+  summarize(env, md);
   return { state, actions, skipped, failures };
 }
 

@@ -23,7 +23,7 @@ Keeper suite:
     npm ci
     npm test
 
-Expected: `17` tests, `17` pass.
+Expected: `18` tests, `18` pass.
 
 ## What each test proves
 
@@ -264,7 +264,8 @@ funds, and signs with a fresh throwaway key on each run. Its tests live in
   claim's fix is checked then released; a not-fixed verdict is never released or
   re-checked; reverts are counted across runs and the call is then skipped; a dry
   run sends nothing; a network error on send is retried and not counted as a
-  revert.
+  revert; the run summary is written only where the run's own environment
+  points, so the test suite never writes into a live run's summary.
 
 ## Harness note
 

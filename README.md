@@ -117,7 +117,7 @@ two contracts at the addresses above; nothing is mocked.
     pip install "genlayer-test[sim]"
     python -m pytest tests/ -q
 
-**Keeper suite.** 17 tests cover the keeper's planning rules and its execution against a simulated chain (`cd keeper && npm ci && npm test`).
+**Keeper suite.** 18 tests cover the keeper's planning rules and its execution against a simulated chain (`cd keeper && npm ci && npm test`).
 
 **Live reviews.** Proven on-chain across two vulnerability classes on two targets:
 

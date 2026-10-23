@@ -157,3 +157,22 @@ test("a transient network error on send is retried, not counted as a revert", as
   assert.equal(sent.length, 1);
   assert.deepEqual(r.failures, {});
 });
+
+test("the run summary goes only where the passed env points", async () => {
+  const init = base();
+  init.claims.clm_0 = { campaign_id: "cam_0", status: "open", patched_url: "" };
+  const { client } = fakeChain(init);
+  const e = env({ DRY_RUN: "1" });
+  const out = join(mkdtempSync(join(tmpdir(), "summary-")), "summary.md");
+  const before = process.env.GITHUB_STEP_SUMMARY;
+  process.env.GITHUB_STEP_SUMMARY = out; // a real run's summary file
+  try {
+    await runOnce({ client, account: ACCOUNT, addr: ADDR, env: e });
+    assert.equal(existsSync(out), false); // the test env has no summary path
+    await runOnce({ client, account: ACCOUNT, addr: ADDR, env: { ...e, GITHUB_STEP_SUMMARY: out } });
+    assert.match(readFileSync(out, "utf8"), /Read 1 campaign\(s\) and 1 claim\(s\)/);
+  } finally {
+    if (before === undefined) delete process.env.GITHUB_STEP_SUMMARY;
+    else process.env.GITHUB_STEP_SUMMARY = before;
+  }
+});
