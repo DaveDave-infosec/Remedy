@@ -72,6 +72,11 @@ Every step that moves a claim forward is permissionless, so a keeper drives them
 
 The keeper decides nothing. The contracts set every outcome and amount, so it needs no privileges, no funds, and no secret: it signs with a fresh throwaway key on each run. It never dismisses, refunds, or proposes a fix; those stay with the people who own them. A call that reverts three times in a row is skipped rather than retried forever.
 
+Live on the V4 pair, a claim citing two targets was moved from filed to paid by the keeper alone, each step signed by a different throwaway key. Consensus judged it Reward at Critical, and the vault paid 3900 (4000 less the fee) from the primary target's own schedule, not the campaign default of 10000.
+
+- Review, run #2: https://github.com/DaveDave-infosec/Remedy/actions/runs/39906587000 (transaction https://explorer-studio.genlayer.com/tx/0xb900b95ed310d70588a21251e7ea7ff6b13028e4d72976a5319b7f9d8e5f7a65)
+- Settlement, run #3: https://github.com/DaveDave-infosec/Remedy/actions/runs/39913771500 (transaction https://explorer-studio.genlayer.com/tx/0x59ac633ce720951c6fc69b88bc46768e9e6c53e1b7eb9bcc35b5842e92e7350e)
+
 ## Disagreement is signal
 
 Every verdict carries a minority_note: the strongest dissenting view, produced by the same consensus that set the outcome and written on-chain alongside the verdict. It is one dissenting view per verdict, produced in consensus, not a tally of individual validators.
@@ -150,3 +155,4 @@ Then open the local URL. Use Demo mode for a throwaway wallet and click the fauc
 - Live app: https://remedy-genlayer.vercel.app
 - Test map: [TESTING.md](TESTING.md)
 - Settlement receipt: https://explorer-studio.genlayer.com/tx/0xee0e886feebf45b6de68f00bc18a6e10ade17d00a9a491bbdd77c64c3c32cb69
+- Keeper settlement receipt (V4): https://explorer-studio.genlayer.com/tx/0x59ac633ce720951c6fc69b88bc46768e9e6c53e1b7eb9bcc35b5842e92e7350e
